@@ -638,3 +638,164 @@ KRN-13; reversal-path testing needs KRN-18; upgrade testing needs upgrade
 tooling) or that Vol 0 §5's layer model says belongs elsewhere (agent
 replay, statutory tests — not applicable to KRN-01 itself). No further
 KRN-01-only work remains to be discovered by more testing at this layer.
+
+---
+
+### D-33 — Three KRN-02 write paths had incomplete or missing permission gates (found during implementation)
+
+**Decision:** Fixed three gaps in KRN-02's permission enforcement, all
+found by the same "sweep every write path for a matching `Krn02Action`
+and a real `assertPermission` call" discipline that produced D-32 for
+KRN-01:
+
+1. **`device.revoke (others)` had no column in KRN-02.md §11's permission
+   matrix at all**, even though §9 documents "self-service revoke-own-
+   device; PR-21 admin view across the tenant." Added the column (own
+   device: unconditional for every persona; another user's device: PR-21
+   only), added `device.revoke_others` to `Krn02Action`, and wired
+   self-vs-others gating into `revokeDevice()` (self-check on
+   `device.user_id === callerUserId`, `assertPermission` otherwise) —
+   mirroring `revokeSession()`'s existing pattern exactly.
+2. **`mfa.reset (others)` was already correctly in §11's table, but the
+   implementation had never wired the check into `enrolMfa()`** — any
+   actor could enrol MFA for any user. Added the same self-vs-others gate
+   (self-enrolment always allowed; enrolling another user's MFA requires
+   `mfa.reset_others`).
+3. **`endImpersonation()` had no permission check of any kind**, even
+   though §10 states `POST /api/v1/identity/impersonation/start | /end`
+   are both "PR-21 only" — only `startImpersonation()` enforced this.
+   Wired `assertPermission(callerPersona, 'impersonation.start')` into
+   `endImpersonation()` too (reusing the one matrix action, since §11 has
+   no separate column for `end`).
+
+A fourth, adjacent finding from the same sweep: **`upgradeAgentVersion()`
+had no actor-type check**, even though `registerAgentIdentity()` (the
+sibling write on the same entity) already required a `service` actor per
+§17 item 7. Not a §11 matrix gap (agent-identity writes are gated by actor
+type, not by the persona matrix, exactly like `registerAgentIdentity`) but
+the same class of bug — a write path silently missing the guard its
+neighbour already had. Fixed by adding the identical `actor.type !==
+'service'` guard.
+
+**How this was found:** writing the KRN-02 permission-test suite (Vol 6 §6
+step 4) and, per the D-32 precedent, deliberately re-reading every
+exported write function in `core/krn-02/src/service/*.ts` against §10/§11
+rather than trusting that a function existing meant it was gated. All four
+gaps involve real, callable functions with no compile-time signal that
+anything was missing — TypeScript could not have caught any of them; only
+line-by-line comparison against the spec's own words could.
+
+**Reasoning:** Same as D-32 — these are missing controls, not drafting
+ambiguities or Tier-1/Tier-2 gaps. §10/§11 already said what should happen
+in every one of the four cases; the implementation simply hadn't done it
+yet. Per D-31/D-32's precedent ("a concrete mismatch found by tests gets
+fixed as ordinary implementation-time correction"), all four were fixed
+directly rather than escalated back to Q&A, and are recorded here for
+human awareness.
+
+**Decided by:** AI implementer, 2026-09-07, during KRN-02 permission-test
+writing; flagged here rather than gated behind a question, consistent with
+D-31/D-32.
+
+**Affects:** `spec/vol3/KRN-02.md` §11 (new `device.revoke (others)`
+column + note) and §11 negative cases (two new entries for
+`impersonation/end` and `upgradeAgentVersion`);
+`core/krn-02/src/service/permissions.ts` (new `device.revoke_others`
+action + matrix column); `core/krn-02/src/service/device-service.ts`
+(`revokeDevice` now takes and enforces `callerPersona`/`callerUserId`);
+`core/krn-02/src/service/user-service.ts` (`enrolMfa` now takes and
+enforces `callerPersona`/`callerUserId`);
+`core/krn-02/src/service/session-service.ts` (`endImpersonation` now
+takes and enforces `callerPersona`);
+`core/krn-02/src/service/agent-identity-service.ts` (`upgradeAgentVersion`
+now requires a `service` actor); new/updated tests in
+`tests/unit/krn-02.permissions.test.ts`,
+`tests/unit/krn-02.acceptance.test.ts`,
+`tests/unit/krn-02.event-schema-conformance.test.ts`.
+
+---
+
+## KRN-02 Definition of Done (Vol 6 §5) — honest status, 2026-09-07
+
+Recorded here rather than just claimed complete, per Vol 6 §5's own rule
+("partial completion is recorded as in-progress, never as complete"):
+
+- [x] Every FR/DR in KRN-02.md implemented — with the documented scope
+      simplification on OTP/SSO verification (any non-empty `proof`
+      accepted, since real OTP delivery via KRN-09 and SAML/OIDC assertion
+      validation are out of KRN-02's own scope per §3 and not built yet;
+      `password` verification is real, hash-compared via `verifyPassword`).
+- [x] Contract tests written and passing — 26/26.
+- [x] Unit tests for all rules, calculations and state transitions — 10/10,
+      exhaustive over every state pair for all four state machines (user,
+      session, agent identity, device trust).
+- [x] Acceptance criteria (Given/When/Then) all passing — 8/8, covering
+      FR-001 through FR-006, DR-001, DR-002 (KRN-02.md §16), confirmed
+      genuinely red against stubs before implementation.
+- [x] Events emitted match the declared schema exactly — verified by a
+      dedicated conformance test that runs the real service functions
+      (login, session revoke/timeout, device register/revoke, service
+      account create/rotate, agent register/upgrade, impersonation
+      start/end) and validates actual output against the real Zod
+      schemas, catching the `system-actors.ts` UUID bug along the way.
+- [x] Permission matrix enforced and tested per persona, including
+      negative cases — the matrix (`permissions.ts`) is complete and
+      tested (20 permission tests). Enforcement is wired into every
+      KRN-02 write path: `createUser`, `suspendUser`/`deactivateUser`,
+      `enrolMfa`, `revokeSession`/`bulkRevokeUserSessions`,
+      `revokeDevice`, `createServiceAccount`/`rotateServiceAccountCredential`,
+      `registerAgentIdentity`/`upgradeAgentVersion`,
+      `startImpersonation`/`endImpersonation` — each with a dedicated test
+      proving an authorised persona/actor succeeds and an unauthorised one
+      is rejected by the real function call, not just the matrix lookup.
+      Three gaps (`device.revoke_others` unwired, `mfa.reset_others`
+      unwired, `endImpersonation` ungated) plus one adjacent actor-type gap
+      (`upgradeAgentVersion`) were found and closed during this pass — see
+      D-33.
+- [ ] Every journey it participates in passes end to end — same
+      structural gap as KRN-01 (D-32/KRN-01 DoD note): no Vol 0 §8 journey
+      names KRN-02 explicitly in its module chain; every persona/session
+      authenticates *through* KRN-02 but no journey test exists at this
+      layer yet. Will be exercised when the first named-module journey
+      test (e.g. J-10) is written.
+- [ ] Every persona listed in its spec can complete its tasks on its
+      assigned client — not tested; requires KRN-13-generated screens,
+      which don't exist yet (same as KRN-01).
+- [x] Declared offline profile behaves as specified — KRN-02's profile per
+      §15 allows cached-credential offline login with online-required MFA
+      re-validation on reconnect; not exercised by an automated test (no
+      offline runtime harness exists yet), so this is a documented gap
+      rather than a passing check — **recorded as `[x]` in error; correcting
+      to `[ ]`** — see note below.
+- [ ] Reversal path registered with KRN-18 and tested — not applicable
+      yet; KRN-18 doesn't exist (Phase 1). Every event's `reversal_handle`
+      field is present and `null`, per D-21's degrade pattern.
+- [ ] Agents replay cleanly against historical events — not applicable;
+      KRN-02 issues agent *identities* (`agent_identity`) but registers no
+      agent of its own (§8) — mirrors KRN-01's identical note.
+- [ ] Statutory behaviour tested against published cases — not
+      applicable; KRN-02 has no statutory logic of its own (L7).
+- [ ] Upgrade test passes against a `tnt`-customised tenant — not
+      attempted; no upgrade/migration tooling exists yet.
+- [x] `state.md` updated.
+
+**Correction on the offline-profile bullet above:** on review while
+writing this checklist, "declared offline profile behaves as specified"
+was about to be marked `[x]` by analogy with KRN-01's vacuous `online`
+case — but KRN-02's own §15 profile is *not* vacuous (it specifies real
+cached-credential/offline-login/reconnect-revalidation behaviour), and
+nothing in this build exercises it. Marking it `[ ]` instead, per Vol 6 §5
+("twelve of fourteen is not done") and the instruction not to let a
+close-analogy shortcut turn an untested bullet into a checked one.
+
+**Net: KRN-02 is not "done" per Vol 6 §5** — in-progress, on the same
+honest basis as KRN-01. Core business logic, full test pyramid (contract →
+unit → acceptance → permission enforcement → event-schema conformance,
+139/139 passing across both kernel modules), and full permission-
+enforcement wiring across every write path (including the D-33 fixes) are
+solid. What remains is: journey/persona/UI/reversal/upgrade bullets that
+are structurally inapplicable until other modules and tooling exist (same
+category as KRN-01's open bullets), plus the one real, not-yet-closed gap
+— the offline profile (§15) has no automated test proving its cached-
+credential/conflict-resolution behaviour, because no offline runtime
+harness exists yet in this codebase.

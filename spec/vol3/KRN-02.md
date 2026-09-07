@@ -301,16 +301,27 @@ All writes: idempotency key required (Vol 1 §1.2).
 Actions: `create`, `read`, `update`, `deactivate`/`revoke`, `approve`
 (N/A here — no approval matrix in KRN-02 itself).
 
-| Persona | user.create/deactivate | mfa.reset (others) | session.read (own) | session.revoke (others) | service_account.manage | agent_identity.read | login_attempt.read | impersonation.start |
-|---|---|---|---|---|---|---|---|---|
-| PR-21 System Admin | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| PR-01 Owner | ✗ | ✗ | ✓ | ✗ | ✗ | ✓ (read) | ✓ (read, summary only) | ✗ |
-| PR-16 CFO | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| PR-25 External CA/Auditor, PR-26 Regulator | ✗ | ✗ | ✓ (own) | ✗ | ✗ | ✗ | ✓ (evidence scope only, per SEC-06) | ✗ |
-| PR-28 Implementation Partner | ✓ (own tenant, provisioning window only) | ✓ (own tenant, provisioning window only) | ✓ (own) | ✗ | ✗ | ✗ | ✗ | ✗ |
-| PR-29 Agent | ✗ | ✗ | n/a — agents authenticate via `credential_ref`/execution context, not a human `session` (§17) | ✗ | ✗ | ✓ (own record only, via INT-03 tooling, not a direct user-facing call) | ✗ | ✗ |
-| All other internal personas (PR-02..15, 17..20) | ✗ | ✗ | ✓ (own) | ✓ (own only, i.e. self-logout on another device) | ✗ | ✗ | ✗ | ✗ |
-| PR-22..24, 27 External personas | ✗ | ✗ | ✓ (own) | ✓ (own only) | ✗ | ✗ | ✗ | ✗ |
+| Persona | user.create/deactivate | mfa.reset (others) | session.read (own) | session.revoke (others) | device.revoke (others) | service_account.manage | agent_identity.read | login_attempt.read | impersonation.start |
+|---|---|---|---|---|---|---|---|---|---|
+| PR-21 System Admin | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| PR-01 Owner | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ (read) | ✓ (read, summary only) | ✗ |
+| PR-16 CFO | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| PR-25 External CA/Auditor, PR-26 Regulator | ✗ | ✗ | ✓ (own) | ✗ | ✗ | ✗ | ✗ | ✓ (evidence scope only, per SEC-06) | ✗ |
+| PR-28 Implementation Partner | ✓ (own tenant, provisioning window only) | ✓ (own tenant, provisioning window only) | ✓ (own) | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| PR-29 Agent | ✗ | ✗ | n/a — agents authenticate via `credential_ref`/execution context, not a human `session` (§17) | ✗ | ✗ | ✗ | ✓ (own record only, via INT-03 tooling, not a direct user-facing call) | ✗ | ✗ |
+| All other internal personas (PR-02..15, 17..20) | ✗ | ✗ | ✓ (own) | ✓ (own only, i.e. self-logout on another device) | ✓ (own device only) | ✗ | ✗ | ✗ | ✗ |
+| PR-22..24, 27 External personas | ✗ | ✗ | ✓ (own) | ✓ (own only) | ✓ (own device only) | ✗ | ✗ | ✗ | ✗ |
+
+**`device.revoke (others)` added post-draft:** the original permission
+matrix had no column for device revocation at all, even though §9
+describes "Device registry — self-service revoke-own-device; PR-21 admin
+view across the tenant." Found the same way as D-32 (KRN-01's
+`isolation_tier.promote` gap) — writing the permission tests and noticing
+no `Krn02Action` corresponded to it. Own-device revoke is unconditional
+for every persona (mirrors `session.revoke (own)`); revoking *another*
+user's device is PR-21-only. Also found: `mfa.reset (others)` was already
+correctly in this table, but the implementation had not wired the check
+into `enrolMfa` — fixed alongside this, not a spec gap of its own.
 
 **Negative cases:**
 - PR-16 (CFO) attempting `session.revoke` on another user's session → 403,
@@ -320,11 +331,19 @@ Actions: `create`, `read`, `update`, `deactivate`/`revoke`, `approve`
   → 403, unconditionally — impersonation is never delegable via KRN-03
   (KRN-02-FR-003 treats it as structurally restricted, not merely
   role-gated).
-- A `service_account` or `agent_identity` credential attempting to call
-  `POST /api/v1/identity/users` → 403 — creating a human user is never an
-  action a non-human actor may take, independent of any permission grant
-  it otherwise holds (consistent with L9's spirit applied to identity
-  creation, not just trust ceilings).
+- An `agent_identity` credential attempting to call
+  `POST /api/v1/identity/users` → 403 — even though a `service` actor
+  (COM-04 provisioning, per §10) may create users during tenant setup, an
+  agent may never create a human identity, independent of any permission
+  grant it otherwise holds (consistent with L9's spirit applied to
+  identity creation, not just trust ceilings). **Corrected during
+  implementation** — the original draft said "a `service_account` or
+  `agent_identity` credential," which directly contradicted §10's "POST
+  restricted to PR-21 or COM-04 provisioning" (COM-04 authenticates as a
+  `service` actor). Found writing the permission tests, fixed per D-31's
+  precedent (a concrete mismatch found by tests is fixed as ordinary
+  implementation-time correction) rather than re-opened as a question —
+  see `/spec/decisions-taken.md`.
 - PR-28 (Implementation Partner) attempting any identity action after the
   tenant leaves its provisioning window → 403, mirroring KRN-01's
   equivalent negative case.
@@ -332,6 +351,18 @@ Actions: `create`, `read`, `update`, `deactivate`/`revoke`, `approve`
   `POST /api/v1/fin/*/post` (or any `action: post` per KRN-03-FR-001) →
   403 regardless of the impersonated user's own permissions
   (KRN-02-FR-003).
+- Any non-PR-21 persona attempting `POST /api/v1/identity/impersonation/end`
+  → 403, unconditionally, same as `/start` — §10 states both endpoints are
+  "PR-21 only," but the original implementation only wired the check into
+  `startImpersonation`; `endImpersonation` had no permission check at all.
+  Found in the same D-33 sweep, fixed alongside it (see
+  `/spec/decisions-taken.md`).
+- A non-`service` actor (a `user` or `agent` credential) attempting to call
+  `upgradeAgentVersion` (agent version increment) → rejected, mirroring
+  `registerAgentIdentity`'s existing `service`-actor-only guard. §10 already
+  said agent-identity *writes* generally are "restricted to INT-03/STU-07
+  service accounts," but only the registration path enforced it —
+  the version-upgrade path did not. Found in the same D-33 sweep.
 
 ## 12. Events emitted / consumed
 

@@ -16,7 +16,9 @@
       "@mahisys/shared": ["core/shared/src/index.ts"],
       "@mahisys/shared/*": ["core/shared/src/*"],
       "@mahisys/krn-01": ["core/krn-01/src/index.ts"],
-      "@mahisys/krn-01/*": ["core/krn-01/src/*"]
+      "@mahisys/krn-01/*": ["core/krn-01/src/*"],
+      "@mahisys/krn-02": ["core/krn-02/src/index.ts"],
+      "@mahisys/krn-02/*": ["core/krn-02/src/*"]
     }
   },
   "include": ["core", "tests"],
