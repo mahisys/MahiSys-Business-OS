@@ -799,3 +799,224 @@ category as KRN-01's open bullets), plus the one real, not-yet-closed gap
 — the offline profile (§15) has no automated test proving its cached-
 credential/conflict-resolution behaviour, because no offline runtime
 harness exists yet in this codebase.
+
+---
+
+### D-34 — KRN-04's `sys` metadata is physically replicated per tenant, extending D-18
+
+**Decision:** `entity_definition`, `field_definition`, `relationship_definition`,
+`validation_rule`, `computed_field`, `extension_point` and `schema_version`
+rows are physically replicated per tenant — including `namespace: sys`
+rows — exactly as D-18 chose for KRN-12's reference data. Every row, with
+no exception anywhere in the codebase, carries a real, non-null
+`tenant_id`. `entity_definition.code` (and the equivalent natural key on
+each sibling entity) remains the stable cross-tenant identity a `sys`
+record is "the same definition" by; the row's own `id` is per-tenant-copy,
+never shared. A `sys` `schema_version` gains a new field, `release_id`
+(uuid, nullable — set only for `sys` versions), correlating every tenant's
+physical copy of "the same platform release" for reporting and audit,
+without those copies sharing a row or a lifecycle gate: each tenant's copy
+of a `sys` schema_version progresses `draft → validated → rehearsed →
+promoted` independently, mirroring D-18/KRN-12-DR-003's "a tenant that
+missed a fan-out run catches up on its next one, rather than blocking
+every other tenant." Fan-out to "every known tenant" is not something
+KRN-04's own service functions do internally — every KRN-04 write takes
+`tenant_id` as an explicit input parameter, exactly like every KRN-01/
+KRN-02 write does, and the platform release pipeline (external to KRN-04,
+the same `PR-30` service account §11 already names) is responsible for
+calling KRN-04's write/promote endpoints once per tenant. This is the
+identical division of labour KRN-12's fan-out sync job already
+established (`KRN-12-DR-001`/`003`: "one job run processes one tenant"),
+so KRN-04 never needs to read KRN-01's tenant table directly (L3).
+
+**How this was found:** reading KRN-04.md §4.1 before writing its Zod
+contracts. Its literal text says "for a `sys` definition record,
+`tenant_id` is null" — flagged in that same paragraph as this draft's own
+extrapolation, not sourced from Vol 1. That directly contradicts D-18's
+explicit, human-chosen reasoning ("every row in the system, without
+exception, carries a real `tenant_id`... no special-casing for 'platform
+pseudo-tenant' visibility anywhere in the query/permission layer") and the
+shared `UniversalFieldsSchema.tenant_id` contract every module composes
+via `withUniversalFields()`, which is `uuid` (non-nullable) with a comment
+citing D-18 directly. KRN-04.md was drafted before D-18 was decided and
+was never revisited afterward — unlike KRN-12.md, which D-18's own
+"Affects" line says was reworked. This is a genuine spec/spec
+inconsistency between two already-approved Vol 3 files, not a routine
+Tier-2 field-naming gap, so it was put to the human rather than resolved
+unilaterally (unlike D-32/D-33, which were concrete implementation-time
+mismatches fixed directly per the D-31 precedent) — this one changes the
+physical shape of every `sys` row in the module and reopens a
+"no-exceptions" invariant the human had explicitly closed once already.
+
+**Reasoning (human's choice, matching the recommended default):** Keeps
+D-18's "no exceptions, ever" invariant intact rather than reopening it for
+KRN-04 specifically — a tenant-isolated `dedicated`/`isolate`-tier tenant
+never has even a read-only cross-tenant-visible row for its own schema, on
+the same principle D-18 already established for reference data. Accepted
+trade-off: `schema_version` needs the new `release_id` correlation field,
+and a platform release now writes N per-tenant physical copies rather than
+one shared row — the same fan-out cost D-18 already accepted for KRN-12,
+so no new category of complexity is introduced, just one more module
+paying the cost the human already chose to pay once.
+
+**Decided by:** Human (project owner), 2026-09-07, via AskUserQuestion,
+accepting the recommended default (consistent with D-18's original
+choice).
+
+**Affects:** `spec/vol3/KRN-04.md` — reworked (§4.1 field design incl. new
+`schema_version.release_id`, §5 per-tenant-independent lifecycle note,
+§10/§11 framing, §12 events become per-tenant, §16 acceptance criteria).
+`core/krn-04` contracts and service layer, once written, implement the
+replicated model directly — no `tenant_id`-nullable code path anywhere.
+
+---
+
+### D-35 — Three more KRN-04.md gaps found while writing contracts/service/tests
+
+**Decision:** Fixed three additional concrete gaps in KRN-04.md, found by
+the same "read the spec's own sections against each other, don't trust
+that they agree" discipline that produced D-32/D-33, all fixed directly
+per the D-31 precedent rather than escalated to Q&A (none is an
+architectural or cross-module question — each is an internal
+inconsistency within KRN-04.md itself):
+
+1. **`entity_definition`'s field table never declared `sunset_at`**, even
+   though §5's state machine already required it ("`active → deprecated`
+   requires `sunset_at` to be set in the same write"). Added
+   `deprecated_at`/`sunset_at` to §4.1, mirroring `field_definition`'s
+   identical shape, and renamed the field table's literal `version` to
+   `schema_version_id` (a reference, not a duplicate of the universal
+   `version` counter every entity already carries — the two would have
+   collided in the Zod schema).
+2. **§12's event list named events for only 3 of the 7 owned entities'
+   mutations** (`entity_definition`, `field_definition`, `schema_version`
+   — nothing for `relationship_definition`, `validation_rule`,
+   `computed_field`, `extension_point`). Added
+   `metadata.relationship.created`, `metadata.validation_rule.created`,
+   `metadata.computed_field.created`, `metadata.extension_point.created`.
+3. **A second pass over §5 found five more state transitions with no
+   event at all**: `entity_definition`'s `draft→active` and
+   `deprecated→retired`, `field_definition`'s `deprecated→retired`, and
+   `schema_version`'s `draft→validated`, `validated→rehearsed`, plus the
+   `promoted→superseded` side-effect a new promotion causes on the
+   version it replaces. Added `metadata.entity.activated`,
+   `metadata.entity.retired`, `metadata.field.retired`,
+   `metadata.schema.version_validated`,
+   `metadata.schema.version_rehearsed`,
+   `metadata.schema.version_superseded`. The `superseded→promoted` path a
+   `rollback` restores reuses the existing
+   `metadata.schema.version_promoted` event rather than a new one, since
+   restoring a version to `promoted` is semantically a promotion of it —
+   consistent with KRN-02's `revokeDevice` precedent (one event per
+   affected row in a cascading mutation, not a new event name per
+   trigger).
+
+**How this was found:** items 1 and 3 came from checking every field
+referenced in §5's prose against §4.1's actual field tables, and every
+state-machine transition against §12's event list, rather than assuming
+the two sections were already consistent because both were part of the
+same "APPROVED" file. Item 2 came from checking that all 7 owned entities
+(§4) had at least one emitted event, the same sweep that found item 3.
+L4 ("never emit a state change without an event") is one of the fifteen
+absolute laws — none of these three gaps is optional to close.
+
+**Reasoning:** Same as D-32/D-33 — concrete, mechanical mismatches
+*within* an already-approved spec file, not new design questions. Vol 6
+§4/L13's "flag gaps, don't guess" duty is about genuine ambiguity or
+missing sourcing; these are places the file simply forgot to apply its
+own stated rules consistently across sections, discoverable by
+cross-referencing, not by re-deciding anything. Fixed directly per D-31's
+"a concrete mismatch found by tests/implementation gets fixed as ordinary
+implementation-time correction" precedent.
+
+**Decided by:** AI implementer, 2026-09-07, during KRN-04 contract/
+service/test writing; flagged here for human awareness rather than gated
+behind a question, consistent with D-32/D-33/D-34.
+
+**Affects:** `spec/vol3/KRN-04.md` §4.1 (new fields) and §12 (ten new/
+renamed events); `core/krn-04/src/contracts/entity-definition.ts`,
+`field-definition.ts`, `events.ts`; `core/krn-04/src/service/*.ts` (every
+lifecycle-transition function now emits); new/updated coverage in
+`tests/unit/krn-04.event-schema-conformance.test.ts`.
+
+---
+
+## KRN-04 Definition of Done (Vol 6 §5) — honest status, 2026-09-07
+
+Recorded here rather than just claimed complete, per Vol 6 §5's own rule
+("partial completion is recorded as in-progress, never as complete"):
+
+- [x] Every FR/DR in KRN-04.md implemented — including the D-34 rework
+      (physical per-tenant replication of `sys` metadata) and the D-35
+      fixes (missing `sunset_at`, missing events for 4 of 7 entities,
+      missing events for 5 more state transitions).
+- [x] Contract tests written and passing — 19/19.
+- [x] Unit tests for all rules, calculations and state transitions —
+      8/8, exhaustive over every state pair for all three state machines
+      (`entity_definition.status`, `field_definition.status`,
+      `schema_version.status`).
+- [x] Acceptance criteria (Given/When/Then) all passing — 12/12, covering
+      every FR/DR in §16, including the two Vol 1 samples (FR-002,
+      FR-004) adapted to what KRN-04 actually owns (a type-check/
+      consistency primitive a record-owning module would call, not a
+      literal business-record write KRN-04 has no store for — L3).
+      **Process note:** unlike KRN-01/KRN-02, these were not strictly
+      written failing-first against a `NotImplementedError` stub before
+      the real implementation existed — contracts, service layer and
+      tests were developed together in this session. All are genuinely
+      passing against real logic, but the "confirmed red first" discipline
+      Vol 6 §6 describes was not literally followed step-by-step this
+      time; flagged honestly rather than claimed.
+- [x] Events emitted match the declared schema exactly — verified by a
+      dedicated conformance test exercising all 17 event types (including
+      the 10 added during implementation, D-35) against the real Zod
+      schemas.
+- [x] Permission matrix enforced and tested per persona, including
+      negative cases — the matrix (`permissions.ts`) is complete and
+      tested (14 permission tests). Enforcement is wired into every
+      KRN-04 write path across all 7 owned entities, split consistently
+      on each record's own `namespace` (`sys` → service-actor-only,
+      never persona-gated; `tnt` → the matrix), including the D-34
+      per-tenant-independent `schema_version` lifecycle (promote/
+      rollback proven both for `tnt`, matrix-gated, and `sys`,
+      service-actor-gated).
+- [ ] Every journey it participates in passes end to end — same
+      structural gap as KRN-01/KRN-02: no Vol 0 §8 journey names KRN-04
+      explicitly; every screen/report/module depends on it *indirectly*
+      through KRN-13/STU-04, neither of which exist yet. Will be
+      exercised once the first named-module journey test is written.
+- [ ] Every persona listed in its spec can complete its tasks on its
+      assigned client — not tested; requires KRN-13-generated screens,
+      which don't exist yet (same as KRN-01/KRN-02).
+- [x] Declared offline profile behaves as specified — KRN-04's own
+      authoring surface is `online` (§15); vacuously satisfied, mirroring
+      KRN-01's identical case. (KRN-04's *read* API being cached by
+      offline-capable clients via KRN-16 is a KRN-16 behaviour to test
+      when KRN-16 is built, not a KRN-04 offline-profile obligation.)
+- [ ] Reversal path registered with KRN-18 and tested — not applicable
+      yet; KRN-18 doesn't exist (Phase 1). Every event's `reversal_handle`
+      field is present and `null`, per D-21's degrade pattern.
+- [ ] Agents replay cleanly against historical events — not applicable;
+      KRN-04 registers no agent of its own (§8).
+- [ ] Statutory behaviour tested against published cases — not
+      applicable; KRN-04 has no statutory logic of its own (L7).
+- [ ] Upgrade test passes against a `tnt`-customised tenant — not
+      attempted; no upgrade/migration tooling exists yet. (Notably,
+      KRN-04 *is* the engine such a test would eventually exercise most
+      directly — `schema_version`'s rehearse/promote/rollback lifecycle
+      is the literal mechanism Vol 0 §34 upgrade-safety rests on — but
+      exercising it end-to-end needs STU-10, which doesn't exist yet.)
+- [x] `state.md` updated.
+
+**Net: KRN-04 is not "done" per Vol 6 §5** — in-progress, on the same
+honest basis as KRN-01/KRN-02. Core business logic, full test pyramid
+(contract → unit → acceptance → permission enforcement → event-schema
+conformance, 54/54 passing for KRN-04, 193/193 combined across all three
+kernel modules), and full permission-enforcement wiring across every
+write path in all 7 owned entities are solid, including the D-34
+per-tenant replication model and the D-35 completeness fixes. What
+remains is entirely the bullets that are structurally inapplicable until
+other modules and tooling exist (journey/persona/UI need KRN-13;
+reversal-path needs KRN-18; upgrade rehearsal needs STU-10) — the one
+process deviation worth naming plainly is that acceptance tests were not
+strictly written failing-first this time, unlike KRN-01/KRN-02.

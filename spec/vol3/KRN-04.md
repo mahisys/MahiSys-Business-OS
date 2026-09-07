@@ -87,19 +87,30 @@ KRN-04 does not call STU-10, STU-10 calls KRN-04's `/diff` endpoint.
 
 ### 4.1 Field-level detail
 
-Universal fields (Vol 2 §1.2 — `id`, `tenant_id` where applicable,
-`namespace`, `ext`, `created_at/by`, `updated_at/by`, `version`,
-`deleted_at/by`, `source`, `trace_id`) apply to every entity below and are
-not repeated per field table. Note that for a `sys` definition record,
-`tenant_id` is null — `sys` metadata is platform-wide, not tenant-scoped;
-a `tnt` definition record carries the authoring tenant's `tenant_id`.
+Universal fields (Vol 2 §1.2 — `id`, `tenant_id`, `namespace`, `ext`,
+`created_at/by`, `updated_at/by`, `version`, `deleted_at/by`, `source`,
+`trace_id`) apply to every entity below and are not repeated per field
+table. **`tenant_id` is never null, including on `namespace: sys`
+records** (D-34, extending D-18's identical choice for KRN-12): every
+`sys` definition is physically replicated per tenant, each tenant holding
+its own real row seeded identically at provisioning and updated by
+platform-release fan-out — not one shared platform-wide row. `code`
+(scoped to `(tenant_id, namespace, owning_module)` for `entity_definition`,
+and the equivalent per-parent-entity scoping for `field_definition` etc.)
+is the stable identity a `sys` record is "the same definition" by *across*
+tenants; a record's own `id` is specific to that tenant's physical copy
+and is never shared or compared across tenants. Fan-out to every tenant is
+platform-release-pipeline orchestration external to KRN-04 (see D-34) —
+every write below takes `tenant_id` as an explicit input, exactly like
+every KRN-01/KRN-02 write does, never derived by KRN-04 reading another
+module's table (L3).
 
 **`entity_definition`** (Vol 1 §KRN-04, verbatim, plus a `status` field —
 extrapolated, flagged in §17):
 
 | Field | Type | Notes |
 |---|---|---|
-| `code` | string | Unique within `(namespace, owning_module)`; immutable once `status` leaves `draft` |
+| `code` | string | Unique within `(tenant_id, namespace, owning_module)` (D-34: `sys` rows are per-tenant physical copies, so uniqueness is scoped per tenant like every other record); immutable once `status` leaves `draft` |
 | `namespace` | enum | `sys` \| `tnt` |
 | `primitive_id` | ref | `P-01`..`P-12` — **mandatory** (KRN-04-FR-001), enforcing T2 |
 | `owning_module` | ref | Module ID this entity belongs to (L3 boundary — no other module's code may read/write its tables directly) |
@@ -108,7 +119,8 @@ extrapolated, flagged in §17):
 | `state_machine_id` | ref, nullable | The `KRN-05 process_definition` governing this entity's lifecycle, when it has one — this is how `P-07 Process` composes with any other primitive |
 | `semantic_index_policy` | enum | Governs whether and how records feed `KRN-14 Search & Semantic Index` |
 | `offline_profile` | enum | `full` \| `read` \| `online` (Vol 0 §9.2) — the contract KRN-16 enforces at sync time |
-| `version` | integer | The `schema_version` this definition currently belongs to |
+| `schema_version_id` | ref, nullable | The `schema_version` this definition currently belongs to — renamed from Vol 1's literal `version` during implementation (found while writing the Zod contract): a bare `version` field here would collide with the universal `version` field (Vol 2 §1.2's per-row optimistic-lock counter), which every entity already carries via the universal fields and which means something different. Flagged inline per Vol 6 §4/L13 rather than silently guessing which meaning callers wanted |
+| `deprecated_at`, `sunset_at` | timestamptz nullable, date nullable | **Added during implementation** — §5's state machine already required these ("`active → deprecated` requires `sunset_at` to be set in the same write"), but this table never declared them; the original field list simply omitted the fields its own state-machine section assumed. Mirrors `field_definition`'s identical two-field shape below: `sunset_at` is required whenever `deprecated_at` is set (KRN-04-FR-003 at entity granularity) |
 | `status` | enum | Extrapolated — see §5 and §17.2 |
 
 **`field_definition`** (Vol 1 §KRN-04, verbatim):
@@ -167,10 +179,10 @@ extrapolated, flagged in §17):
 
 | Field | Type | Notes |
 |---|---|---|
-| `tenant_id` | ref, nullable | Null for a platform-wide `sys` version; set for a tenant's own `tnt` version history |
-| `version_no` | integer | Monotonic within its scope |
+| `version_no` | integer | Monotonic within its scope (per tenant) |
+| `release_id` | uuid, nullable | **D-34.** Set only for `namespace: sys` versions — shared across every tenant's own physical copy of "the same platform release," correlating them for reporting/audit. `null` for a `tnt` version (a tenant's own metadata change has no cross-tenant counterpart to correlate with). Never used as a lifecycle gate — each tenant's copy progresses independently (see §5) |
 | `status` | enum | Extrapolated — see §5 and §17.3 |
-| `diff` | JSONB | Machine-readable added/changed/deprecated entities and fields (KRN-04-DR-002, and KRN-04-DR-003 below) |
+| `diff` | JSONB | Machine-readable added/changed/deprecated entities and fields, referenced by `code` path (D-34 — stable across tenants), not by internal `id` (KRN-04-DR-002, and KRN-04-DR-003 below) |
 | `rehearsed_against` | ref, nullable | The shadow tenant used for STU-10's rehearsal |
 | `promoted_at` | timestamptz, nullable | |
 | `promoted_by` | actor ref, nullable | |
@@ -212,6 +224,12 @@ KRN-04-DR-002's "reversible" concrete rather than aspirational. A version
 cannot reach `promoted` without first reaching `rehearsed` (the STU-10
 shadow-tenant diff step); the engine enforces this ordering itself, the same
 enforcement stance KRN-04-DR-001 takes toward namespace separation.
+**Per D-34, this state machine is evaluated independently per tenant's own
+physical copy of a `schema_version` row** — for a `sys` release fanned out
+across every tenant (sharing one `release_id`), one tenant reaching
+`promoted` never gates or is gated by another's; a tenant unreachable
+during fan-out simply catches up on the next attempt, mirroring
+`KRN-12-DR-003`'s identical guarantee for reference-data sync.
 
 ## 6. Standard functional requirements
 
@@ -269,12 +287,12 @@ Base per Vol 0 §42: `/api/v1/metadata/{entity}`.
 | CRUD | `/api/v1/metadata/validations` | |
 | CRUD | `/api/v1/metadata/computed-fields` | |
 | CRUD | `/api/v1/metadata/extension-points` | `sys`-writable only — a tenant cannot declare where it may extend a platform entity, only use what is declared (KRN-04-FR-005) |
-| GET/POST | `/api/v1/metadata/schema-versions` | POST creates a `draft` version; further lifecycle moves are explicit sub-actions below |
-| POST | `/api/v1/metadata/schema-versions/{id}/validate` | `draft → validated` |
-| POST | `/api/v1/metadata/schema-versions/{id}/rehearse` | `validated → rehearsed`; invokes STU-10's shadow-tenant apply |
-| POST | `/api/v1/metadata/schema-versions/{id}/promote` | `rehearsed → promoted`; rejected if not rehearsed |
-| POST | `/api/v1/metadata/schema-versions/{id}/rollback` | `promoted → rolled_back`, restoring the prior promoted version |
-| GET | `/api/v1/metadata/diff` | `{from_version, to_version}` → structured diff (KRN-04-DR-003) |
+| GET/POST | `/api/v1/metadata/schema-versions` | POST creates a `draft` version, always tenant-scoped (D-34) — for a `sys` release, the platform release pipeline calls this once per tenant, passing the same `release_id` each time to correlate the copies; further lifecycle moves are explicit sub-actions below |
+| POST | `/api/v1/metadata/schema-versions/{id}/validate` | `draft → validated`, one tenant's copy |
+| POST | `/api/v1/metadata/schema-versions/{id}/rehearse` | `validated → rehearsed`; invokes STU-10's shadow-tenant apply; one tenant's copy |
+| POST | `/api/v1/metadata/schema-versions/{id}/promote` | `rehearsed → promoted`; rejected if not rehearsed; one tenant's copy — KRN-04 never iterates "every tenant" itself (D-34; L3), the caller (platform release pipeline) invokes this once per tenant |
+| POST | `/api/v1/metadata/schema-versions/{id}/rollback` | `promoted → rolled_back`, restoring the prior promoted version; one tenant's copy |
+| GET | `/api/v1/metadata/diff` | `{from_version, to_version}` → structured diff (KRN-04-DR-003), referencing entities/fields by `code` path (D-34 — stable across a `sys` release's per-tenant copies, unlike internal `id`) |
 
 All list endpoints: cursor pagination, declared filters, field selection
 (Vol 1 §1.2). All writes: idempotency key required.
@@ -327,6 +345,39 @@ only — no human role holds this), `schema_version.promote`,
 - `metadata.schema.version_rolled_back` *(addition, not in Vol 1 — the event
   counterpart of KRN-04-DR-002's "reversible" and the `rollback` API action
   in §10)*
+- `metadata.relationship.created`, `metadata.validation_rule.created`,
+  `metadata.computed_field.created`, `metadata.extension_point.created`
+  *(added during implementation — Vol 1's event list, and this draft's own
+  first pass at it, named events for only 3 of the 7 owned entities'
+  mutations; L4 ("never emit a state change without an event") applies to
+  every owned entity's create, not only the ones Vol 1 happened to name.
+  These four close that gap the same way `metadata.field.updated` and
+  `metadata.schema.version_rolled_back` already did above)*
+- `metadata.entity.activated`, `metadata.entity.retired`,
+  `metadata.field.retired`, `metadata.schema.version_validated`,
+  `metadata.schema.version_rehearsed`, `metadata.schema.version_superseded`
+  *(added during implementation — a second pass over §5's state machines
+  found five more state transitions with no corresponding event:
+  `entity_definition`'s `draft→active` and `deprecated→retired`,
+  `field_definition`'s `deprecated→retired`, and `schema_version`'s
+  `draft→validated`, `validated→rehearsed`, and the `promoted→superseded`
+  side-effect a new promotion causes on the version it replaces. L4 is
+  unconditional — it does not exempt a transition just because Vol 1 never
+  named an event for it. `schema_version`'s `superseded→promoted` path
+  (the version a `rollback` restores) reuses the existing
+  `metadata.schema.version_promoted` event rather than inventing a new
+  one, since restoring a version to `promoted` is, semantically, a
+  promotion of that version — consistent with KRN-02's `revokeDevice`
+  precedent of emitting one event per affected row for a cascading
+  mutation, not inventing a new event name for every distinct trigger)*
+
+Every event above carries a real `tenant_id` and is emitted per tenant
+(D-34) — for a `sys` release fanned out across every tenant, one
+`metadata.schema.version_promoted` event is emitted per tenant's own copy
+reaching `promoted`, each carrying that release's shared `release_id` in
+its payload for correlation, mirroring `KRN-12-DR-001`'s identical
+per-tenant `masters.reference_data.sync_completed` pattern rather than one
+platform-wide event.
 
 **Consumed:** none. KRN-04 is foundational (Layer 0) and initiates schema
 state rather than reacting to other modules' events. It *receives* writes
@@ -423,21 +474,29 @@ metadata.
 > Then the platform upgrade succeeds and all 14 `tnt` fields and both `tnt` entities remain functional, while the tenant admin's attempted `sys` edit is rejected regardless of role — the boundary is enforced by the engine, not by permission configuration alone.
 
 **KRN-04-DR-002 — metadata change is versioned, diffable, reversible, rehearsed**
-> Given `schema_version` `V12` in `status: rehearsed` against shadow tenant `T-shadow`
-> When `V12` is promoted
-> Then `status` moves to `promoted`, the previous version moves to `superseded`, a `metadata.schema.version_promoted` event is emitted, and a subsequent `rollback` call restores the prior version's `status` to `promoted` and `V12` to `rolled_back`, with `metadata.schema.version_rolled_back` emitted.
+> Given tenant `T-acme`'s own physical copy of `schema_version` `V12` (`release_id: R-2026-09`, D-34) is in `status: rehearsed` against shadow tenant `T-shadow`, and tenant `T-globex`'s copy of the same `release_id` is still `validated`
+> When `T-acme`'s `V12` is promoted
+> Then `T-acme`'s copy's `status` moves to `promoted`, its previous version moves to `superseded`, a `metadata.schema.version_promoted` event carrying `release_id: R-2026-09` is emitted for `T-acme` alone, `T-globex`'s copy is untouched and continues toward `rehearsed` independently, and a subsequent `rollback` call on `T-acme`'s copy restores its prior version's `status` to `promoted` and its `V12` copy to `rolled_back`, with `metadata.schema.version_rolled_back` emitted for `T-acme` alone.
 
 **KRN-04-DR-003 — diff is machine-readable (addition)**
-> Given `schema_version` `V12` differs from `V11` by 3 added `sys` fields and 1 deprecated `sys` field
-> When STU-10 calls `GET /api/v1/metadata/diff?from_version=V11&to_version=V12`
-> Then the response is a structured JSON object enumerating exactly those 4 changes by entity and field ID (not free text), and STU-10's promotion screen renders it without any additional interpretation step.
+> Given tenant `T-acme`'s copy of `schema_version` `V12` differs from its `V11` by 3 added `sys` fields and 1 deprecated `sys` field
+> When STU-10 calls `GET /api/v1/metadata/diff?from_version=V11&to_version=V12` scoped to `T-acme`
+> Then the response is a structured JSON object enumerating exactly those 4 changes by entity and field `code` (D-34 — not internal `id`, which is specific to `T-acme`'s own physical copy and not meaningful to compare across tenants), and STU-10's promotion screen renders it without any additional interpretation step.
 
 ## 17. Open questions
 
 Flagged per Vol 6 §4/L13 — these are gaps in Vol 1's field-level detail that
 this draft filled by reasonable extrapolation from the stated purpose and
-requirements. They should be confirmed or corrected by the human before this
-Vol 3 file is treated as binding:
+requirements. Items 1-6 below were Tier-2 routine drafting gaps, bulk-
+approved per D-31 (see `/spec/decisions-taken.md`) — this file is
+APPROVED per `/spec/state.md`. **Not covered by that bulk approval:** this
+draft's §4.1 originally stated `tenant_id` is null for `sys` records,
+which directly contradicted D-18 (decided after this file's first draft,
+never revisited here) and the shared `UniversalFieldsSchema` contract.
+That was a genuine spec/spec inconsistency, not a Tier-2 gap, put to the
+human separately and resolved as D-34 — `sys` metadata is now physically
+replicated per tenant, exactly like D-18's KRN-12 model. §4.1, §5, §10,
+§12 and the DR-002/DR-003 acceptance criteria above already reflect D-34.
 
 1. **Field tables for `relationship_definition`, `validation_rule`,
    `computed_field`, `schema_version` and `extension_point`** (§4.1) are not
