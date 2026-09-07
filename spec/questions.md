@@ -98,9 +98,20 @@ against my own guess of what "done" means for e.g. KRN-03 Access Control's
 permission matrix, which is precisely the kind of prose-driven, ambiguous
 implementation Vol 0 T14 and Vol 6 exist to prevent.
 
-**Status:** OPEN. Put to the human: do they want to supply Vol 3 files for
-the 20 kernel modules themselves, or have this session draft them (expanding
-Vol 1's abbreviated specs into the full Vol 0 §1 template — full FR/DR list,
-permission matrix by persona, complete Given/When/Then set, event schemas)
-for human review and approval before any test or code is written against
-them? See conversation for the answer once given.
+**Status:** CLOSED — 2026-09-07. Human chose to have this session draft all
+20 files for review. All 20 written (`/spec/vol3/KRN-01.md` through
+`KRN-20.md`), each following the full Vol 0 §1 template, expanding every
+Vol 1 FR/DR with complete Given/When/Then, field-level entity detail,
+permission matrices and event lists. Every module/persona/primitive/
+journey/agent ID cited across all 20 files was cross-checked by direct grep
+audit against Vol 0's catalogue — zero invented IDs found (L15 compliance
+confirmed, not just instructed).
+
+This closure does **not** mean the drafts are binding. Per Vol 6 §4/L13,
+each file's own §17 "Open questions" flags every gap where Vol 1 lacked
+field/API/event-level detail and this draft had to extrapolate. 133 such
+items exist across the 20 files; 12 of them are genuine cross-module
+architectural questions (not just missing detail) consolidated in
+`/spec/vol3-review-summary.md` §2 for human decision before Phase 0
+contract tests are written. See that file and `/spec/state.md` for the
+current review status and next steps.
