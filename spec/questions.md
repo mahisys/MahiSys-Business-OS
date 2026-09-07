@@ -30,7 +30,77 @@ application module to build against (Kernel first, always — §3). Proceeding
 to design or implement anything beyond repository scaffolding would risk
 inventing IDs or primitives, both of which are forbidden (L2, L15).
 
-**Status:** OPEN. Awaiting Vol 0 (master), Vol 1 (kernel SRS), Vol 2 (data
-model) from the human. No module implementation, kernel implementation, or
-stack-specific scaffolding beyond repository layout (§7) will proceed until
-these are supplied and this question is closed.
+**Status:** CLOSED — 2026-09-07. Vol 0, Vol 1 and Vol 2 supplied and committed
+to `/spec/`. See Q-002 for the follow-on blocker this raised.
+
+---
+
+## Q-002 — 2026-09-07 — D-11 through D-17 are still open in Vol 0 §43.2
+
+**Question:** Vol 0 §43 (Decision log) lists D-11 through D-17 under
+"43.2 Open — gating Volume 1," and the document's own closing line states:
+*"Volume 1 (Platform Kernel SRS) begins once D-11 through D-17 are closed."*
+Vol 6 §11 repeats the same gate for the pilot slice.
+
+However, Vol 1 (Kernel SRS) already exists and was supplied in this session.
+Vol 1 §1.1 itself acknowledges the gap: its stack table is captioned
+"recommendation pending D-12," i.e. Vol 1 was authored ahead of the decision
+its own foundational section depends on.
+
+The seven open decisions, and what each blocks per §43.2:
+
+| # | Decision | Blocks |
+|---|---|---|
+| D-11 | Book of record — OS replaces Tally in year one, or mirrors it | Migration design, FIN scope, sales narrative |
+| D-12 | Technology stack | Metadata engine design; all of Vol 1 |
+| D-13 | Deployment model — pure SaaS, or on-prem option for BFSI/Pharma | Kernel packaging, INT-12 design |
+| D-14 | Ordder.io and Karyaflo — absorbed as modules or federated against this kernel | Product boundary, roadmap, brand |
+| D-15 | Billing metric — seats, transactions, or entity count | COM-03, KRN-20 |
+| D-16 | AI unit economics (§29.3 calculation) | Pricing model, Intelligence tier boundary |
+| D-17 | Partner strategy timing — when STU-08 opens to partners | COM-06, certification model |
+
+**Why it blocks:** Per Vol 6 §4, a still-open Vol 0 §43.2 decision that a task
+depends on is a stop-and-ask condition, not something to guess past. D-12
+alone gates "all of Vol 1" by Vol 0's own text, meaning the kernel SRS just
+supplied is formally provisional until it closes. Phase 0 (KRN-01..14,
+CMP-01..04, ITG-01 per §39) should not begin — no kernel code will be
+written — until this is resolved by the human, since Vol 0 §43.2, Vol 6 §11,
+and Vol 6 §3 ("Kernel first, always") all say so independently.
+
+**Status:** CLOSED — 2026-09-07. All seven decisions closed or deliberately
+deferred with a stated revisit trigger; see `/spec/decisions-taken.md` for
+each decision and its reasoning. D-11, D-12, D-13, D-15 closed on the
+recommended defaults. D-14 and D-17 deferred (non-blocking for Phase 0).
+D-16 deferred pending pricing targets (non-blocking for Phase 0).
+
+---
+
+## Q-003 — 2026-09-07 — No Vol 3 module SRS files exist for the kernel modules
+
+**Question:** Vol 6 L13 states: *"Never write code before its acceptance
+tests exist. Given/When/Then criteria come from the Vol 3 file. If they are
+missing or ambiguous, stop and ask."* Vol 6 §6 (test-first protocol) begins
+with "Read the Vol 3 acceptance criteria" before any contract or acceptance
+test is written.
+
+Vol 1 (Kernel SRS) Part 2 explicitly says each kernel module section is
+*"the Vol 3 template in abbreviated form... Full Given/When/Then sets live
+in `/spec/vol3/`"* — and gives exactly one **sample** acceptance criterion
+per module (e.g. `KRN-01` has one Given/When/Then; a real module will need
+many, covering every FR/DR, every persona's permission matrix including
+negative cases, and every declared event schema). No `/spec/vol3/*.md` files
+exist in this repository for any of the 20 kernel modules (or any other
+module).
+
+**Why it blocks:** Per L13 and Vol 6 §6, I cannot write kernel code without
+full acceptance criteria to build against — doing so would mean building
+against my own guess of what "done" means for e.g. KRN-03 Access Control's
+permission matrix, which is precisely the kind of prose-driven, ambiguous
+implementation Vol 0 T14 and Vol 6 exist to prevent.
+
+**Status:** OPEN. Put to the human: do they want to supply Vol 3 files for
+the 20 kernel modules themselves, or have this session draft them (expanding
+Vol 1's abbreviated specs into the full Vol 0 §1 template — full FR/DR list,
+permission matrix by persona, complete Given/When/Then set, event schemas)
+for human review and approval before any test or code is written against
+them? See conversation for the answer once given.
