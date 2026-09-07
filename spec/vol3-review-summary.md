@@ -54,6 +54,17 @@ in-line, per the drafting constraint.
 
 ## 2. Tier 1 — architectural questions needing your decision
 
+**STATUS: ALL 12 RESOLVED — 2026-09-07.** Full decisions and reasoning
+recorded as D-18 through D-30 in `/spec/decisions-taken.md`. Two decisions
+(D-18, D-19) went against this document's recommended defaults and
+required substantive rework of `spec/vol3/KRN-12.md` (per-tenant physical
+replication of `sys` reference data, and a named exception letting KRN-12
+call ITG-07 directly). One decision (D-28) added a new value-gated
+second-approval requirement (`KRN-18-FR-007`) to `spec/vol3/KRN-18.md`.
+The remaining nine confirmed the drafts as originally written. The
+sub-sections below are kept as the historical record of what was asked and
+why — see `/spec/decisions-taken.md` for the actual resolutions.
+
 These aren't drafting gaps — they're places where two modules' specs could
 genuinely disagree, where Vol 0/1/2 themselves seem to conflict, or where a
 real product/risk decision is hiding inside what looks like an
@@ -242,10 +253,10 @@ forks.
 
 ## 4. Recommended next step
 
-1. Resolve the twelve Tier-1 items above (§2.1–2.12) — these are the ones
-   that would be expensive to discover wrong mid-build.
+1. ~~Resolve the twelve Tier-1 items above~~ **DONE** — see
+   `/spec/decisions-taken.md` D-18 through D-30.
 2. Skim Tier 2 per-file gaps; approve in bulk or flag specific corrections.
-3. Once approved, close this review in `/spec/decisions-taken.md` and
-   `/spec/state.md`, and Phase 0 kernel implementation (contract tests
-   first, per Vol 6 §6) can begin on KRN-01 — the module with the fewest
-   open questions and no dependencies.
+   **Not yet done — this is the current blocker.**
+3. Once approved, Phase 0 kernel implementation (contract tests first, per
+   Vol 6 §6) can begin on KRN-01 — the module with the fewest open
+   questions and no dependencies.

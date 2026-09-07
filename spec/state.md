@@ -47,18 +47,18 @@ no Vol 3 files exist yet. Not started.
 
 ## Open issues
 
-- **`/spec/vol3-review-summary.md`** consolidates 12 Tier-1 architectural
-  questions across the 20 kernel drafts that need explicit human decisions
-  before Phase 0 contract tests are written (tenant_id universality on
-  platform-shared reference data, a real L4-vs-practicality tension in
-  KRN-07, three phase-ordering patterns, three kernel/Layer-2 scope
-  boundaries, the INT-04 trust-ceiling enforcement boundary, KRN-11's
-  numbering scope, a missing Vol 0 Differentiating line for KRN-11, a
-  maker-checker gap in KRN-18, and a live-machine-translation product
-  decision in KRN-19). See that file for full detail.
-- Every individual KRN-*.md file also carries routine "Tier 2" gaps (§17 in
-  each) — mostly missing Vol 1 field-level/API/Events detail that the draft
-  filled in and flagged for confirmation. See review summary §3.
+- ~~`/spec/vol3-review-summary.md` Tier-1 architectural questions~~
+  **RESOLVED 2026-09-07.** All 12 items decided — see
+  `/spec/decisions-taken.md` D-18 through D-30. `KRN-12.md` (D-18/D-19:
+  per-tenant physical replication of `sys` reference data, ITG-07 called
+  directly as a named layer exception) and `KRN-18.md` (D-28: value-gated
+  second approval, new `KRN-18-FR-007`) were substantively reworked as a
+  result; the other 9 decisions confirmed drafts as written.
+- **Current blocker:** Tier 2 — every individual KRN-*.md file still
+  carries routine gaps (§17 in each) — mostly missing Vol 1 field-level/
+  API/Events detail that the draft filled in and flagged for confirmation.
+  See review summary §3. Nothing blocks starting on these in bulk; they are
+  lower-stakes than Tier 1 was.
 - D-16 (AI unit economics) remains deferred pending target gross margin and
   price point from the human (per `/spec/decisions-taken.md`) — not
   blocking Phase 0, will block Phase 2/Commerce pricing work.
@@ -67,10 +67,9 @@ no Vol 3 files exist yet. Not started.
 
 ## Next step
 
-1. Human reviews `/spec/vol3-review-summary.md` §2 (Tier 1) and resolves
-   the 12 flagged architectural questions.
+1. ~~Human reviews Tier 1 architectural questions~~ **DONE.**
 2. Human skims Tier 2 per-file gaps (§4.1/§10/§12 in each KRN-*.md),
-   approves in bulk or corrects specific items.
+   approves in bulk or corrects specific items. **Current step.**
 3. Once approved, per Vol 6 §6 (test-first protocol): write contract tests
    for KRN-01 first (no dependencies, fewest open questions), then unit
    tests, then permission tests, then implement — in that order, before
@@ -78,3 +77,9 @@ no Vol 3 files exist yet. Not started.
 4. Studio (STU-01..05) and remaining Phase 1 kernel Vol 3 files
    (already drafted for KRN-15..20 ahead of need) get the same review
    treatment before Phase 1 begins.
+
+## Decisions log pointer
+
+D-01 through D-17: initial charter/stack/deployment/billing decisions.
+D-18 through D-30: Tier-1 kernel Vol 3 review decisions (2026-09-07). See
+`/spec/decisions-taken.md` for the full record.

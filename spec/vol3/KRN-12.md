@@ -1,10 +1,12 @@
 # KRN-12 · Masters & Reference Data
 
-**Family:** Kernel · **Layer:** L0 · **SKU tier:** `included` · **Depends on:** KRN-01 (legal entity scoping for `tnt` reference values), KRN-04 (metadata registration of `tnt` reference types)
+**Family:** Kernel · **Layer:** L0 · **SKU tier:** `included` · **Depends on:** KRN-01 (legal entity scoping for `tnt` reference values), KRN-04 (metadata registration of `tnt` reference types), **ITG-07** (Layer 1 — central reference-data refresh; a documented, named exception to Vol 0 §5's no-upward-layer-dependency rule, per D-19, scoped narrowly to this one read-only refresh job and not a general licence for Layer 0 to depend on Layer 1)
 
 **Status:** DRAFT — expanded by the AI implementer from Vol 1 Part 2 (KRN-12)
-per Vol 6 §4/L13, for human review and approval. Not binding until approved
-(see §17).
+per Vol 6 §4/L13, for human review and approval. Reworked 2026-09-07 per
+D-18 (per-tenant physical replication of `sys` reference data) and D-19
+(ITG-07 exception for central updates) — see `/spec/decisions-taken.md`.
+Not binding until fully approved (remaining open questions in §17).
 
 ---
 
@@ -71,18 +73,36 @@ owns the bank/IFSC *directory*, not any party's account against it).
   keeping tenant extension inside the declared extension mechanism (Vol 2
   §1.7) rather than an ad hoc side table.
 
-KRN-12 deliberately consumes nothing from Layer 1 or above (see §17 —
-this constrains how the "platform-maintained, centrally updated"
-differentiator in KRN-12-DR-001 can actually be implemented, since Vol 0's
-layer model forbids a Layer-0 kernel module depending on a Layer-1 service
-like ITG-07).
+- `ITG-07` (Government APIs) — **D-19: a named, documented exception** to
+  the general rule that Layer 0 may not depend on Layer 1. KRN-12's own
+  central-refresh job calls ITG-07's read-only government-data endpoints
+  (GSTN rate schedules, HSN/SAC, pincode/DGFT feeds) to source the values
+  it then writes into every tenant's replicated copy (§4.1, D-18). This
+  exception is scoped to exactly this one refresh path — it does not
+  license any other Layer-0 module to call a Layer-1 service, and any
+  future case of the same pattern should cite D-19 explicitly rather than
+  being re-litigated as a new question (consistent with D-21's standing
+  convention for recurring architectural patterns).
 
 ## 4.1 Field-level detail
 
-Universal fields (Vol 2 §1.2) apply, with one documented exception noted in
-§17: platform (`sys`) reference rows are shared across all tenants rather
-than carrying a genuine per-tenant `tenant_id`, since a currency code or an
-HSN chapter is not tenant data.
+Universal fields (Vol 2 §1.2) apply to every KRN-12 entity with **no
+exception** (D-18): every `sys` reference row — every currency, HSN/SAC
+entry, tax code, pincode, calendar, bank directory row — is physically
+replicated per tenant and carries a genuine, real `tenant_id`, resolved
+through row-level security identically to every other entity in the
+platform. There is no shared platform-pseudo-tenant table and no
+special-cased read path anywhere in KRN-12's data model.
+
+**Replication mechanism (D-18/D-19).** A tenant's `sys` reference rows are
+seeded at provisioning (COM-04, from the manifest's `masters_preload`, Vol
+0 §30) and kept current by a scheduled per-tenant sync job (§10, §12) that
+calls ITG-07 (D-19) and applies the same upstream update to every tenant's
+copy in turn. A central update therefore fans out to 10,000 individual
+writes rather than one — accepted as the cost of a uniform, exception-free
+data model (D-18's stated reasoning). `KRN-12-DR-001`'s promise ("tenants
+never carry stale statutory data") depends on this fan-out job's own
+freshness SLA, tracked in §13.
 
 **`uom`** and **`uom_conversion`** (extrapolated from KRN-12-FR-003; not
 field-detailed in Vol 1 — flagged in §17):
@@ -171,8 +191,9 @@ time"). There is no KRN-05 process instance anywhere in this module.
 
 ## 7. Differentiating requirements
 
-- `KRN-12-DR-001` HSN/SAC, GST rate schedules and pin-code mappings are platform-maintained and updated centrally, so tenants never carry stale statutory data. *(Vol 1, verbatim)*
+- `KRN-12-DR-001` HSN/SAC, GST rate schedules and pin-code mappings are platform-maintained and updated centrally, so tenants never carry stale statutory data. *(Vol 1, verbatim. Mechanism per D-18/D-19: a platform-operated sync job sources updates from ITG-07 and fans them out to every tenant's own replicated copy — "centrally maintained" describes the source of truth and the update process, not a single shared table.)*
 - `KRN-12-DR-002` Because reference data is versioned and effective-dated (KRN-12-FR-001) rather than mutated in place, a central update to KRN-12-DR-001's data (e.g. a GST rate change effective a future date) never retroactively alters the tax outcome of an already-issued document — the historical version remains resolvable exactly as it was on the document's date. *(Addition — makes explicit why FR-001 and DR-001 must work together for DR-001's promise to actually hold.)*
+- `KRN-12-DR-003` The per-tenant fan-out sync job (D-18/D-19) is idempotent and resumable: a tenant that missed one or more sync cycles (e.g. an isolation-tier-`dedicated` tenant temporarily unreachable) catches up to the current upstream state on its next successful run without manual intervention, and its `sync_freshness` metric (§13) reflects the actual lag honestly in the meantime. *(Addition — a direct consequence of choosing per-tenant replication over one shared table, per D-18: replication introduces a per-tenant freshness/consistency question that a single shared table would not have had, so it needs its own explicit guarantee.)*
 
 ## 8. Agents
 
@@ -214,6 +235,8 @@ Base per Vol 0 §42: `/api/v1/masters/{entity}`.
 | GET | `/api/v1/masters/banks` | Read-only, `sys`-maintained IFSC directory |
 | GET | `/api/v1/masters/industry-codes` | Read-only |
 | GET | `/api/v1/masters/{entity}/as-of?date=` | Resolves the effective-dated version valid on a given date (KRN-12-FR-001) — the mechanism every other module uses instead of reading the "current" row directly |
+| POST | `/api/v1/masters/sync-jobs` | Platform-internal only (no tenant-facing caller) — triggers or is scheduled (KRN-15) to run the per-tenant reference-data fan-out sync against ITG-07 (D-19); one job run processes one tenant, per D-18's per-tenant replication model |
+| GET | `/api/v1/masters/sync-jobs/{tenant_id}/status` | PR-21 visibility only — last successful sync time and freshness lag for that tenant's `sys` reference copy (§13) |
 
 All list endpoints: cursor pagination, declared filters, field selection
 (Vol 1 §1.2).
@@ -262,9 +285,17 @@ flagged in §17):
 - `masters.pincode.updated`
 - `masters.calendar.holiday_added`
 - `masters.bank.updated`
-- `masters.reference_data.sync_completed` — emitted once per platform-wide
-  central update batch (KRN-12-DR-001), so CMP-01 and any subscriber can
-  invalidate cached lookups rather than polling.
+- `masters.reference_data.sync_completed` — emitted once **per tenant** at
+  the end of that tenant's fan-out sync run (D-18/D-19), carrying the set
+  of entity types updated, so CMP-01 and any subscriber can invalidate that
+  tenant's cached lookups rather than polling. (Revised from the original
+  draft's single platform-wide event to a per-tenant event, consistent with
+  D-18's per-tenant replication model — there is no longer one moment when
+  "the platform" finishes updating, only 10,000 tenant-scoped completions.)
+- `masters.reference_data.sync_failed` — emitted per tenant when a fan-out
+  run fails (ITG-07 unreachable, tenant temporarily unreachable on
+  `dedicated` isolation); consumed by KRN-15's retry policy and surfaced to
+  PR-21 via §13's freshness reporting. *(Addition, D-18/D-19 consequence.)*
 
 **Consumed:** none. KRN-12, like KRN-01, is foundational and initiates
 reference data rather than reacting to other modules' events.
@@ -273,10 +304,12 @@ reference data rather than reacting to other modules' events.
 
 - **Reference-data version history** per entity type — audit-facing, shown
   to PR-16/PR-25 (§9).
-- **Sync freshness** — how recently each centrally-maintained (`sys`) set was
-  last updated against its upstream source, a platform-internal operational
-  metric more than a tenant-facing one, but visible to PR-21 as reassurance
-  that HSN/SAC and GST schedules are current.
+- **Sync freshness** — per tenant (D-18), how recently that tenant's
+  replicated `sys` reference copy was last synced against ITG-07 (D-19).
+  Primarily a platform-internal operational metric (aggregated across all
+  10,000 tenants, to catch a systemic ITG-07 outage or a stuck job queue),
+  but also visible per-tenant to PR-21 as reassurance that their own
+  HSN/SAC and GST schedules are current (§10's `sync-jobs/{tenant_id}/status`).
 - **UoM conversion coverage** — flags item masters (SCM-01) referencing a
   UoM pair with no declared conversion path, surfaced as a data-quality
   signal, not a KRN-12-owned remediation.
@@ -318,10 +351,15 @@ risk.
 > When CMP-01 resolves the tax code for a document dated 2026-11-15
 > Then it receives the pre-2027-04-01 version (no cess component), and a document dated 2027-05-01 receives the post-2027-04-01 version — regardless of which version is "current" at query time.
 
-**KRN-12-DR-001 — centrally-maintained statutory data**
-> Given a platform-wide update that adds three new HSN codes and revises the GST rate on an existing HSN code, effective a stated future date
-> When the update batch completes
-> Then every tenant on the platform sees the new codes and the revised rate from that effective date forward without any tenant-side action, a `masters.reference_data.sync_completed` event is emitted, and no tenant is able to independently modify the `sys` HSN/SAC or tax-code sets to diverge from the platform-maintained values (per §11's negative case).
+**KRN-12-DR-001 — centrally-maintained statutory data (per-tenant fan-out)**
+> Given an upstream ITG-07 update that adds three new HSN codes and revises the GST rate on an existing HSN code, effective a stated future date, and 10,000 tenants each holding their own replicated `sys` HSN/SAC and tax-code copy (D-18)
+> When the platform-scheduled fan-out sync (D-19) runs across all tenants
+> Then every tenant's own copy receives the new codes and the revised rate from that effective date forward without any tenant-side action, each tenant emits its own `masters.reference_data.sync_completed` event on completion, a tenant unreachable during the run is retried per `KRN-12-DR-003` rather than silently skipped, and no tenant is able to independently modify their own `sys` HSN/SAC or tax-code rows to diverge from what the sync job wrote (per §11's negative case — `sys` write access is never granted to a tenant role regardless of whether the row is shared or replicated).
+
+**KRN-12-DR-003 — sync job idempotency and catch-up**
+> Given a `dedicated`-isolation tenant that misses two consecutive scheduled fan-out sync runs due to a network partition
+> When connectivity is restored and the next scheduled run executes
+> Then that tenant's `sys` reference copy catches up to the current upstream state in one run (not two queued, duplicate runs), its `masters.reference_data.sync_completed` event reflects the true content delta since its last successful sync, and its `sync_freshness` status (§13) accurately showed the lag as `stale` throughout the gap rather than silently reporting current.
 
 **KRN-12-FR-002 — tenant-added reference values**
 > Given a tenant on a Manufacturing manifest (VRT-01) that needs a custom UoM `COIL` (for wire coil stock) not present in the platform's `sys` UoM set
@@ -369,35 +407,23 @@ this file is treated as binding:
    value objects (`Money`, `Quantity`, `Address`) that reference them; please
    confirm or amend, particularly the `exchange_rate.entity_id` scoping
    choice and the `tax_code.rate_components` shape.
-3. **Tenant-scoping of `sys` reference rows** — Vol 2 §1.2 states `tenant_id`
-   is a universal field, "never optional," on every persisted entity. But
-   KRN-12's `sys`-namespace reference data (currency, HSN/SAC, tax code,
-   country/state/pincode, bank) is logically platform-shared across every
-   tenant, not tenant-specific — only the `tnt` extensions (custom UoM,
-   custom calendars) are genuinely tenant-owned. This draft assumes `sys`
-   reference rows are a deliberate, declared exception to the blanket
-   universal-fields rule (stored without a real per-tenant `tenant_id`, or
-   under a platform-owned pseudo-tenant, visible to every tenant read path)
-   rather than 10,000 tenants each holding a physical copy of the same HSN
-   table. This appears to need reconciling with Vol 2 §1.2's own wording —
-   please confirm the intended physical model before it is built, since it
-   affects row-level security design (KRN-01 §3.1) platform-wide, not just
-   KRN-12.
-4. **Central-update mechanism and layering** — KRN-12-DR-001 says HSN/SAC,
-   GST schedules and pincode mappings are "platform-maintained and updated
-   centrally," but the obvious candidate mechanism (ITG-07 Government APIs)
-   is a Layer-1 integration service, and Vol 0 §5 forbids a lower layer
-   (KRN-12 is Layer 0) depending on a higher one. This draft assumes the
-   central update is an internal platform-operations data-refresh process
-   (curated and pushed by MahiSys itself, scheduled via KRN-15, not a live
-   per-tenant ITG-07 call) — distinct from ITG-07's tenant-facing GSTIN
-   lookup use at signup (Vol 0 §32.2). Confirm this reading, and confirm who
-   (which team/process) is accountable for keeping the upstream curated data
-   itself current, since Vol 0/1 do not name an owner for that operational
-   process.
+3. ~~**Tenant-scoping of `sys` reference rows.**~~ **RESOLVED — D-18.**
+   Physical replication per tenant, every row carries a real `tenant_id`,
+   no exception to Vol 2 §1.2's universal-fields rule. See §4.1.
+4. ~~**Central-update mechanism and layering.**~~ **RESOLVED — D-19.**
+   KRN-12 calls ITG-07 directly, as a documented, named exception to Vol 0
+   §5's no-upward-layer-dependency rule, scoped to this one refresh job.
+   The operational-ownership half of this question (which MahiSys team
+   curates/monitors the fan-out job) remains genuinely open — D-19 settled
+   the architecture, not the operational staffing. Flagged forward to
+   `/spec/state.md`'s open issues rather than re-listed as a numbered item
+   here.
 5. **Exchange rate feed ownership** — this draft assumes KRN-12 only stores
    exchange rates (manually entered or written by a higher-layer module such
    as FIN-07 consuming ITG-04) and never itself calls an external rate
-   source, to preserve the same layering constraint as point 4. Confirm this
-   boundary, particularly which module is responsible for the `source:
-   integration` write path once FIN-07/ITG-04 are built.
+   source. Note this is now the *opposite* pattern from D-19's resolution
+   for HSN/SAC/GST/pincode (where KRN-12 *does* call out, to ITG-07) — worth
+   confirming this asymmetry is intended (exchange rates genuinely differ:
+   they change continuously/intraday rather than on a statutory effective
+   date, and FIN-07 is the natural owner of treasury-grade rate feeds) rather
+   than an oversight, before FIN-07's own Vol 3 file is drafted.
