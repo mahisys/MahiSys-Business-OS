@@ -227,21 +227,33 @@ All list endpoints: cursor pagination, declared filters, field selection
 Actions: `create`, `read`, `update`, `delete` (always soft, SEC-07 only),
 `approve` (lifecycle/period transitions), `export`.
 
-| Persona | tenant.read | tenant.lifecycle | legal_entity.create/update | org_unit.create/update | cost_centre.create/update | fiscal_period.read | fiscal_period.close/reopen |
-|---|---|---|---|---|---|---|---|
-| PR-21 System Admin | ✓ | ✓ (propose; approval per KRN-05 matrix) | ✓ | ✓ | ✓ | ✓ | ✗ |
-| PR-01 Owner | ✓ | ✓ (approve) | ✗ | ✗ | ✗ | ✓ | ✗ |
-| PR-02 Functional Head | ✓ (own function) | ✗ | ✗ | ✓ (propose, own function) | ✗ | ✓ (own function) | ✗ |
-| PR-16 CFO | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ |
-| PR-15 Accountant | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ |
-| PR-28 Implementation Partner | ✓ (own tenant, provisioning window only) | ✗ | ✓ (own tenant, provisioning window only) | ✓ (own tenant, provisioning window only) | ✓ (own tenant, provisioning window only) | ✗ | ✗ |
-| All other internal personas | ✓ (own entity/org-unit scope, read-only, resolved implicitly for row scoping — not a direct screen) | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Persona | tenant.read | tenant.lifecycle | isolation_tier.promote | legal_entity.create/update | org_unit.create/update | cost_centre.create/update | fiscal_period.read | fiscal_period.close/reopen |
+|---|---|---|---|---|---|---|---|---|
+| PR-21 System Admin | ✓ | ✓ (propose; approval per KRN-05 matrix) | ✓ (propose; approval per KRN-05 matrix) | ✓ | ✓ | ✓ | ✓ | ✗ |
+| PR-01 Owner | ✓ | ✓ (approve) | ✓ (approve) | ✗ | ✗ | ✗ | ✓ | ✗ |
+| PR-02 Functional Head | ✓ (own function) | ✗ | ✗ | ✗ | ✓ (propose, own function) | ✗ | ✓ (own function) | ✗ |
+| PR-16 CFO | ✓ | ✗ | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ |
+| PR-15 Accountant | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ |
+| PR-28 Implementation Partner | ✓ (own tenant, provisioning window only) | ✗ | ✗ | ✓ (own tenant, provisioning window only) | ✓ (own tenant, provisioning window only) | ✓ (own tenant, provisioning window only) | ✗ | ✗ |
+| All other internal personas | ✓ (own entity/org-unit scope, read-only, resolved implicitly for row scoping — not a direct screen) | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+
+**`isolation_tier.promote` added post-draft:** Vol 1 documents isolation-tier
+promotion as a consequential, hard-to-reverse infrastructure action
+(KRN-01-DR-001) but the original permission matrix draft omitted a column
+for it entirely — surfaced during implementation (contract/acceptance-test
+writing), not by a fresh Vol 0/1 reading. Given its risk profile — a
+regulatory/compliance-driven action at least as consequential as tenant
+suspension — this draft assigns it the same propose (PR-21) / approve
+(PR-01) split as `tenant.lifecycle`, pending human confirmation like any
+other Tier-2-style gap (per D-31's precedent: a concrete mismatch found by
+tests is fixed as ordinary implementation-time correction).
 
 **Negative cases:**
 - PR-15 (Accountant) attempting `fiscal_period.close` → 403, audited (KRN-10), no partial close, period state unchanged.
 - PR-02 (Functional Head) attempting `org_unit.create` outside their own function's subtree → 403.
 - Any persona attempting `tenant.create` via API directly (not via COM-04 service account) → 403, regardless of role, since tenant creation is a provisioning-process action, not a role-permission grant (KRN-01-FR-004, Vol 6 L1 — platform never writes `tnt` on a tenant's behalf, and equally a tenant never self-provisions a sibling tenant).
 - PR-28 (Implementation Partner) attempting any action outside the provisioning window (after `tenant.status` leaves `trial`/pre-`active`, unless explicitly re-engaged) → 403.
+- PR-16 (CFO) or any persona other than PR-21/PR-01 attempting `isolation_tier.promote` → 403, regardless of role.
 
 ## 12. Events emitted / consumed
 

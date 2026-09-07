@@ -527,3 +527,114 @@ every open item raised in `/spec/vol3-review-summary.md` is now resolved.
 Per Vol 6 §6 (test-first protocol), KRN-01 contract tests may begin —
 KRN-01 is the module with no dependencies, and its Vol 3 file carries no
 outstanding architectural question.
+
+---
+
+### D-32 — `isolation_tier.promote` had no permission gate at all (found during implementation)
+
+**Decision:** Added `isolation_tier.promote` as an explicit action to
+KRN-01.md §11's permission matrix, gated the same way as `tenant.lifecycle`
+(PR-21 propose, PR-01 approve; no other persona), and wired real
+enforcement into `promoteIsolationTier()` — the only KRN-01 write path
+enforced end-to-end so far (see Definition-of-Done note below).
+
+**How this was found:** not by re-reading Vol 0/1/2 — by writing the
+permission-test suite (Vol 6 §6 step 4) and noticing `Krn01Action` had no
+entry corresponding to isolation-tier promotion at all, then checking
+KRN-01.md §11 directly and confirming the column was simply missing from
+the original draft's table. Isolation-tier promotion is a consequential,
+hard-to-reverse infrastructure/compliance action (KRN-01-DR-001) — exactly
+the kind of action that should never have been permission-less.
+
+**Reasoning:** This is not a Tier-1 architectural question (no cross-module
+disagreement, no conflicting rule) and not really a Tier-2 field-naming gap
+either — it's a missing control, closer in kind to a bug than a drafting
+gap. Per Vol 6 §1's end-of-session protocol ("record any decision you were
+forced to make that Vol 0 did not cover") and D-31's own precedent ("a
+concrete mismatch discovered by tests is fixed as ordinary implementation-
+time correction"), this was fixed directly rather than escalated back to
+Q&A — the fix (propose/approve split matching the closest existing
+precedent, `tenant.lifecycle`) is conservative and reversible if the human
+wants a different split.
+
+**Decided by:** AI implementer, 2026-09-07, during KRN-01 permission-test
+writing; flagged here for human awareness rather than gated behind a
+question, consistent with D-31's "fix, don't re-litigate" precedent for
+concrete implementation-time findings.
+
+**Affects:** `spec/vol3/KRN-01.md` §11 (table + new negative case),
+`core/krn-01/src/service/permissions.ts` (new action + matrix column),
+`core/krn-01/src/service/tenant-service.ts` (`promoteIsolationTier` now
+takes and enforces `callerPersona`), new permission tests in
+`tests/unit/krn-01.permissions.test.ts`.
+
+---
+
+## KRN-01 Definition of Done (Vol 6 §5) — honest status, 2026-09-07
+
+Recorded here rather than just claimed complete, per Vol 6 §5's own rule
+("partial completion is recorded as in-progress, never as complete"):
+
+- [x] Every FR/DR in KRN-01.md implemented — with documented scope limits
+      on FR-004 (no real KRN-05 process instance, D-21 degrade), FR-006 and
+      DR-002 (CMP-01/FIN-14 consumption out of scope, D-21 degrade).
+- [x] Contract tests written and passing — 34/34.
+- [x] Unit tests for all rules, calculations and state transitions — 12/12,
+      exhaustive over every state pair for all three state machines plus
+      isolation-tier monotonicity.
+- [x] Acceptance criteria (Given/When/Then) all passing — 10/10, all of
+      §16, with the same documented scope limits as above.
+- [x] Events emitted match the declared schema exactly — verified by a
+      dedicated conformance test that runs the real service functions and
+      validates actual output against the real Zod schemas, not just
+      asserted informally.
+- [x] Permission matrix enforced and tested per persona, including negative
+      cases — the matrix (`permissions.ts`) is complete and tested (17
+      permission tests). Enforcement (`assertPermission`) is wired into
+      every KRN-01 write path: `transitionTenantLifecycle`,
+      `promoteIsolationTier`, `createLegalEntity`, `createOrgUnit`
+      (including the `canProposeOrgUnit` PR-02 subtree check),
+      `createCostCentre`, `closeFiscalPeriod`/`reopenFiscalPeriod`, each
+      with a dedicated test proving an authorised persona succeeds and an
+      unauthorised one is rejected by the real function call, not just by
+      the matrix lookup. PR-28's provisioning-window restriction is
+      enforced automatically wherever a `tenantId` is passed to
+      `assertPermission`, rather than needing to be remembered per call
+      site.
+- [ ] Every journey it participates in passes end to end — **no Vol 0 §8
+      journey (J-01..J-14) names KRN-01 explicitly in its module chain**;
+      every chain lists application modules only (SLS-01, SCM-02, etc.).
+      Interpreted as: KRN-01 is exercised indirectly through every journey
+      via `tenant_id`/`entity_id` scoping, but has no journey test of its
+      own to write at this layer — it will be exercised when the first
+      named-module journey test (e.g. J-10 for MFG-05/SCM-02/CMP-03/FIN-03)
+      is written. Flagged as an interpretation, not a silent skip.
+- [ ] Every persona listed in its spec can complete its tasks on its
+      assigned client — not tested; requires KRN-13-generated screens,
+      which don't exist yet (KRN-13 itself is only a Vol 3 draft, Phase 0
+      order has no built UI layer yet).
+- [x] Declared offline profile behaves as specified — KRN-01's profile is
+      `online` (§15); vacuously satisfied, no conflict policy applicable.
+- [ ] Reversal path registered with KRN-18 and tested — not applicable yet;
+      KRN-18 doesn't exist (Phase 1). Every event's `reversal_handle` field
+      is present and `null`, per D-21's degrade pattern, ready for KRN-18
+      to populate once built.
+- [ ] Agents replay cleanly against historical events — not applicable;
+      KRN-01 registers no agent (§8).
+- [ ] Statutory behaviour tested against published cases — not applicable;
+      KRN-01 has no statutory logic of its own (L7 — that's CMP-01..08).
+- [ ] Upgrade test passes against a `tnt`-customised tenant — not
+      attempted; no upgrade/migration tooling exists yet.
+- [x] `state.md` updated.
+
+**Net: KRN-01 is not "done" per Vol 6 §5** — genuinely in-progress, with a
+clear, honest list of what remains. The core business logic, its full
+test pyramid (contract → unit → acceptance → permission enforcement →
+event-schema conformance, 74/74 passing), and full permission-enforcement
+wiring across every write path are solid. What's left is entirely the
+bullets that are structurally inapplicable until other modules exist
+(journey tests need named application modules; persona/UI tests need
+KRN-13; reversal-path testing needs KRN-18; upgrade testing needs upgrade
+tooling) or that Vol 0 §5's layer model says belongs elsewhere (agent
+replay, statutory tests — not applicable to KRN-01 itself). No further
+KRN-01-only work remains to be discovered by more testing at this layer.
