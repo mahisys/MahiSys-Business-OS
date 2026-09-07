@@ -4,3 +4,7 @@ dist/
 coverage/
 .env
 .env.local
+
+# Throwaway KRN-01/KRN-02 demo UI (see demo/server.ts header) — not part
+# of the governed build (Vol 6 §7), never committed.
+/demo/

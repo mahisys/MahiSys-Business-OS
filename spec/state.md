@@ -168,6 +168,14 @@ done by loose analogy to KRN-01's vacuous `online` case.
   offline-dependent module is being built yet), but a real, tracked gap
   rather than a structural one — revisit once KRN-16 (Sync & Offline
   Service) or an equivalent harness exists.
+- A throwaway, hand-built demo UI for KRN-01/KRN-02 (Node HTTP server +
+  static HTML/JS driving the real in-memory service functions directly)
+  was built at `/demo` purely to produce screenshots for the human, per
+  explicit request. It is `.gitignore`d and never committed — it is not
+  KRN-13-generated, not metadata-driven, and must not be treated as real
+  screen work or extended. Delete the directory once no longer needed;
+  do not build on it when KRN-13 (Layout & Navigation Engine) is
+  eventually implemented.
 
 ## Next step
 
