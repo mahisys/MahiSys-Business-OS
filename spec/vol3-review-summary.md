@@ -233,6 +233,11 @@ no number is hard-coded. No action needed beyond what's already tracked.
 
 ## 3. Tier 2 — routine drafting gaps (bulk-confirmable)
 
+**STATUS: BULK-APPROVED — 2026-09-07 (D-31).** No individual items reopened;
+see `/spec/decisions-taken.md` D-31 for reasoning. Any concrete mismatch
+surfaced by contract tests as Phase 0 proceeds is fixed as ordinary
+implementation-time correction, not a re-litigated open question.
+
 Every file flags, in its own §17, wherever Vol 1 gave no field-level detail
 for an owned entity, or no explicit API/Events section. This is expected —
 Vol 1 explicitly says full detail "lives in `/spec/vol3/`" and many kernel
@@ -255,8 +260,7 @@ forks.
 
 1. ~~Resolve the twelve Tier-1 items above~~ **DONE** — see
    `/spec/decisions-taken.md` D-18 through D-30.
-2. Skim Tier 2 per-file gaps; approve in bulk or flag specific corrections.
-   **Not yet done — this is the current blocker.**
-3. Once approved, Phase 0 kernel implementation (contract tests first, per
-   Vol 6 §6) can begin on KRN-01 — the module with the fewest open
-   questions and no dependencies.
+2. ~~Skim Tier 2 per-file gaps; approve in bulk~~ **DONE** — D-31.
+3. Phase 0 kernel implementation (contract tests first, per Vol 6 §6) now
+   begins on KRN-01 — the module with no dependencies and no outstanding
+   open question. **Current step.**

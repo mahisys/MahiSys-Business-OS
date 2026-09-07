@@ -479,6 +479,51 @@ Two decisions (D-18, D-19) went against the drafts' recommended defaults
 and required substantive rework of `spec/vol3/KRN-12.md`. One decision
 (D-28) added a new requirement to `spec/vol3/KRN-18.md`. The remaining
 nine confirmed the drafts as written, with only their §17 open questions
-marked resolved. Tier-2 routine per-file drafting gaps (missing Vol 1
-field/API/event detail, per `/spec/vol3-review-summary.md` §3) remain open
-for bulk human review before Phase 0 contract tests begin.
+marked resolved.
+
+---
+
+### D-31 — Tier-2 routine drafting gaps, bulk-approved
+
+**Decision:** All remaining Tier-2 items across the 20 kernel Vol 3 files
+(`/spec/vol3-review-summary.md` §3 — entity field-level detail this draft
+extrapolated where Vol 1 gave only entity names, and proposed API/Events
+sections where Vol 1 gave none at all) are bulk-approved as written,
+without going through them individually.
+
+**Reasoning:** These are drafting-completeness gaps, not architectural
+forks — unlike the 12 Tier-1 items, none of them involve two modules
+potentially disagreeing, a conflict between binding rules, or a real
+product/risk decision hiding in the text. Each was already produced by an
+agent grounded directly in Vol 0/1/2, cross-checked for ID validity, and
+built to match KRN-01.md's reviewed depth and structure. Confirming ~110
+individual field/type/endpoint proposals one at a time would cost far more
+than the risk they carry — per Vol 6 §4's own principle ("guessing on any
+of these costs more to unwind than asking costs to resolve"), the
+inverse also holds where the guesses are this well-grounded and this
+low-stakes: re-litigating each one is now the more expensive path.
+
+**What this does not mean:** these fields/endpoints/events are not beyond
+correction. As Phase 0 implementation proceeds module by module, contract
+tests (Vol 6 §6 step 2) will concretely exercise each proposed shape; a
+mismatch discovered there is fixed as ordinary implementation-time
+correction, not treated as reopening a stop-and-ask question. `spec/state.md`
+tracks module-by-module status as this happens.
+
+**Decided by:** Human (project owner), 2026-09-07, in conversation
+(explicit "bulk-approve the Tier 2 gaps").
+
+**Affects:** No individual Vol 3 file edits made as a result (unlike
+D-18/D-19/D-28) — the files stand as drafted. `/spec/vol3-review-summary.md`
+§3 and `/spec/state.md` updated to record this approval and unblock KRN-01
+contract-test writing.
+
+---
+
+## Summary (D-31)
+
+Tier 2 is closed by bulk approval. Combined with D-18 through D-30 (Tier 1),
+every open item raised in `/spec/vol3-review-summary.md` is now resolved.
+Per Vol 6 §6 (test-first protocol), KRN-01 contract tests may begin —
+KRN-01 is the module with no dependencies, and its Vol 3 file carries no
+outstanding architectural question.

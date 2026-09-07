@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "composite": true,
+    "baseUrl": ".",
+    "paths": {
+      "@mahisys/shared": ["core/shared/src/index.ts"],
+      "@mahisys/shared/*": ["core/shared/src/*"],
+      "@mahisys/krn-01": ["core/krn-01/src/index.ts"],
+      "@mahisys/krn-01/*": ["core/krn-01/src/*"]
+    }
+  },
+  "include": ["core", "tests"],
+  "exclude": ["node_modules", "dist"]
+}

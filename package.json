@@ -1,0 +1,19 @@
+{
+  "name": "mahisys-business-os",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "core/*"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:contract": "vitest run tests/contract",
+    "typecheck": "tsc --build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
