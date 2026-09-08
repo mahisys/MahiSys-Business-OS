@@ -1020,3 +1020,158 @@ other modules and tooling exist (journey/persona/UI need KRN-13;
 reversal-path needs KRN-18; upgrade rehearsal needs STU-10) — the one
 process deviation worth naming plainly is that acceptance tests were not
 strictly written failing-first this time, unlike KRN-01/KRN-02.
+
+---
+
+### D-36 — Two KRN-03.md gaps found while writing contracts/service/tests
+
+**Decision:** Fixed two concrete gaps in KRN-03.md, found by the same
+"read the spec's own sections against each other" discipline that
+produced D-32/D-33/D-35, both fixed directly per the D-31 precedent
+(neither is an architectural or cross-module question):
+
+1. **`role`'s field table had no field connecting it to `permission_set`
+   at all**, even though §9 explicitly says the Roles screen lets PR-21
+   "define `sys`/`tnt` roles, attach `permission_set`s." Without this, a
+   `permission_grant` whose `role_id` is set (no `permission_set_id`)
+   would resolve to zero `{entity, action, scope}` grants — making
+   `KRN-03-FR-001` structurally unsatisfiable for role-based grants, and
+   directly closing the object-graph question §17 item 2 had left open.
+   Added `role.permission_set_ids: list<ref>` — a role's effective
+   grants are the union of every attached `permission_set`'s `grants`.
+2. **§12's event list, checked against every state transition in §5,
+   was missing four events**: `role` creation (every sibling owned
+   entity's creation has one, `role`'s didn't); `role.status`'s `active →
+   deprecated`; `permission_grant.status`'s system-driven `expired` path
+   (uncovered by the human-only `access.role.revoked`); and
+   `delegation`'s own creation into `pending`, distinct from
+   `access.delegation.started`'s `pending → active` transition. Added
+   `access.role.created`, `access.role.deprecated`,
+   `access.permission_grant.expired`, `access.delegation.created`. L4 is
+   unconditional.
+
+**How this was found:** item 1 came from noticing that `resolveEffective
+Permissions` (the DR-003 single resolution path every consumer must be
+able to call) had no way to produce a non-empty result for a role-based
+grant, given the entities as originally field-tabled — traced back to
+the missing link, not assumed away. Item 2 is the same "every state
+transition needs a named event" sweep D-35 ran for KRN-04, applied here.
+
+**Reasoning:** Same as D-32/D-33/D-35 — concrete, mechanical gaps within
+an already-approved spec file (KRN-03.md is APPROVED per D-25/D-31), not
+new design questions requiring human input. Fixed directly per D-31's
+"a concrete mismatch found by tests/implementation gets fixed as ordinary
+implementation-time correction" precedent.
+
+**Decided by:** AI implementer, 2026-09-08, during KRN-03 contract/
+service/test writing; flagged here for human awareness rather than gated
+behind a question, consistent with D-32/D-33/D-35.
+
+**Affects:** `spec/vol3/KRN-03.md` §4.1 (new `role.permission_set_ids`)
+and §12 (four new events); `core/krn-03/src/contracts/role.ts`,
+`events.ts`; `core/krn-03/src/service/role-service.ts`,
+`permission-grant-service.ts`, `delegation-service.ts`,
+`effective-permissions-service.ts` (role-based grant resolution now
+actually works); new/updated coverage in
+`tests/unit/krn-03.event-schema-conformance.test.ts`.
+
+---
+
+## KRN-03 Definition of Done (Vol 6 §5) — honest status, 2026-09-08
+
+Recorded here rather than just claimed complete, per Vol 6 §5's own rule
+("partial completion is recorded as in-progress, never as complete"):
+
+- [x] Every FR/DR in KRN-03.md implemented — including the D-36 fixes.
+      `KRN-03-FR-006`'s trust-ceiling half is implemented as documented
+      absence, not as a stub: per D-25 (KRN-02/KRN-03/KRN-15 are all
+      trust-ceiling-*unaware*; INT-04 alone enforces L9),
+      `checkAgentActionGrant` answers only "can this agent ever perform
+      this action" and has no ceiling parameter or concept anywhere in
+      its signature — proven by a dedicated acceptance test, not merely
+      asserted in a comment.
+- [x] Contract tests written and passing — 18/18.
+- [x] Unit tests for all rules, calculations and state transitions —
+      8/8, exhaustive over every state pair for all four state machines
+      (`role.status`, `permission_grant.status`,
+      `data_scope_rule.status`, `delegation.status`).
+- [x] Acceptance criteria (Given/When/Then) all passing — 10/10, covering
+      every FR/DR in §16 plus the §12 consumed-event handler
+      (`revokeGrantsForSubject`, representing `identity.user.deactivated`
+      closing access automatically). FR-001/002/003's Vol 1 samples
+      reference business records (Deals, Invoices, Payroll, P&L) KRN-03
+      does not own (L3) — adapted to the resolution primitives
+      (`hasEffectivePermission`, `isRowInScope`, `resolveFieldPolicy`) a
+      record-owning module's data-access layer would actually call.
+      **Process note, same as KRN-04's:** not strictly written
+      failing-first against a stub before the real implementation
+      existed — contracts, service layer and tests were developed
+      together this session.
+- [x] Events emitted match the declared schema exactly — verified by a
+      dedicated conformance test exercising all 14 event types (including
+      the 4 added during implementation, D-36) against the real Zod
+      schemas.
+- [x] Permission matrix enforced and tested per persona, including
+      negative cases — the matrix (`permissions.ts`) is complete and
+      tested (13 permission tests). Enforcement is wired into every
+      KRN-03 write path across all 6 owned entities, including the
+      self-vs-others split on `delegation.create`/`effective_permissions.
+      read` and the bounded-delegation check (a `permission_set_id` the
+      delegator does not themselves hold is rejected at write time, not
+      merely documented). **One negative case from §11 is explicitly not
+      re-tested as a KRN-03 runtime check** — "PR-25/26 attempting any
+      write action anywhere in the platform" is a provisioning-time
+      discipline (never author a write grant into their `permission_set`),
+      not something `resolveEffectivePermissions` itself enforces or
+      could honestly claim to test, since it resolves by `subject_id`,
+      not by persona label. Documented in
+      `tests/unit/krn-03.permissions.test.ts` rather than faked.
+- [ ] Every journey it participates in passes end to end — same
+      structural gap as KRN-01/02/04: no Vol 0 §8 journey names KRN-03
+      explicitly; every module's own permission checks depend on it
+      *indirectly*. Will be exercised once the first named-module journey
+      test is written.
+- [ ] Every persona listed in its spec can complete its tasks on its
+      assigned client — not tested; requires KRN-13-generated screens,
+      which don't exist yet (same as KRN-01/02/04).
+- [x] Declared offline profile behaves as specified — KRN-03's profile is
+      `read` (§15): the device caches the effective permission set at
+      last sync and enforces it client-side, with server-authoritative
+      reconciliation on reconnect. Not exercised by an automated test (no
+      offline runtime harness exists yet, same gap KRN-02's DoD already
+      named) — **recorded as `[ ]`**, not `[x]` by loose analogy; see the
+      open issue this shares with KRN-02.
+- [ ] Reversal path registered with KRN-18 and tested — not applicable
+      yet; KRN-18 doesn't exist (Phase 1). Every event's `reversal_handle`
+      field is present and `null`, per D-21's degrade pattern.
+- [ ] Agents replay cleanly against historical events — not applicable;
+      KRN-03 registers no agent of its own (§8).
+- [ ] Statutory behaviour tested against published cases — not
+      applicable; KRN-03 has no statutory logic of its own (L7).
+- [ ] Upgrade test passes against a `tnt`-customised tenant — not
+      attempted; no upgrade/migration tooling exists yet. `data_scope_rule`/
+      `field_policy`'s versioned/superseded design (§5) is the mechanism
+      such a test would exercise once STU-10 exists.
+- [x] `state.md` updated.
+
+**Scope note, not a gap:** `role` has no update path beyond
+`deprecateRole` — its `permission_set_ids` are set once at creation. §5
+only defines role's lifecycle as `active → deprecated` with no "role
+updated" event anywhere in §12 even after the D-36 additions, so
+treating `role` as create-once (attach permission sets at creation,
+deprecate-and-recreate to change them) is this draft's minimal,
+defensible reading of what's actually specified — flagged here rather
+than silently built as a mutable entity with an invented event.
+
+**Net: KRN-03 is not "done" per Vol 6 §5** — in-progress, on the same
+honest basis as KRN-01/02/04. Core business logic — most importantly the
+single effective-permissions resolution path (DR-003) every future
+consumer module will call — full test pyramid (contract → unit →
+acceptance → permission enforcement → event-schema conformance, 49/49
+passing for KRN-03, 243/243 combined across all four kernel modules), and
+full permission-enforcement wiring across every write path in all 6
+owned entities are solid, including the D-36 completeness fixes. What
+remains is entirely the bullets that are structurally inapplicable until
+other modules and tooling exist (journey/persona/UI need KRN-13;
+reversal-path needs KRN-18; upgrade rehearsal needs STU-10; the offline
+profile needs a runtime harness, same open gap KRN-02 already carries).

@@ -127,6 +127,7 @@ in §17.
 | `code`, `name`, `description` | string | |
 | `namespace` | enum | `sys` (platform-defined) \| `tnt` (tenant-defined) — per Vol 2 §1.1 |
 | `is_assignable_to_agent` | boolean | Whether this role may be the target of a `permission_grant` whose subject is an `agent_identity` |
+| `permission_set_ids` | list\<ref\> | **Added during implementation** — the original field table had no field connecting a `role` to any `permission_set` at all, even though §9 explicitly says the Roles screen lets PR-21 "define `sys`/`tnt` roles, attach `permission_set`s." Without this, a `permission_grant` whose `role_id` is set (no `permission_set_id`) would resolve to zero `{entity, action, scope}` grants — making `KRN-03-FR-001` unsatisfiable for role-based grants, the object-graph question §17 item 2 left open. This closes it: a `role`'s effective grants are the union of every attached `permission_set`'s `grants` |
 | `status` | enum | `active` \| `deprecated` |
 
 **`permission_set`**:
@@ -306,16 +307,37 @@ others).
 ## 12. Events emitted / consumed
 
 **Emitted** (Vol 1, verbatim, plus extensions):
-- `access.role.granted`
-- `access.role.revoked`
+- `access.role.granted` — a `permission_grant` is created (`role_id`- or
+  `permission_set_id`-based; "role" is Vol 1's shorthand for "an access
+  grant," not a literal restriction to `role_id`-based grants)
+- `access.role.revoked` — a `permission_grant` transitions to `revoked`
 - `access.permission_set.created`
 - `access.permission_set.updated`
-- `access.scope_rule.changed`
-- `access.field_policy.changed`
-- `access.delegation.started`
+- `access.scope_rule.changed` — a `data_scope_rule` is created, or
+  superseded by a new version
+- `access.field_policy.changed` — a `field_policy` is created, or
+  superseded by a new version
+- `access.delegation.started` — a `delegation` transitions `pending →
+  active`
 - `access.delegation.expired`
 - `access.delegation.revoked`
-- `access.policy.changed`
+- `access.policy.changed` — emitted alongside `scope_rule.changed`/
+  `field_policy.changed` (not instead of), as one name a generic
+  cache-invalidation subscriber can listen to regardless of which
+  sub-type changed; Vol 1 gives no further definition distinguishing it
+  from the two specific events, so this draft does not invent a separate
+  business meaning for it (flagged, not sourced further)
+- `access.role.created`, `access.role.deprecated`,
+  `access.permission_grant.expired`, `access.delegation.created`
+  *(added during implementation — the same "check every state transition
+  against the event list" sweep that produced KRN-04's D-35 found four
+  more gaps here: `role` creation had no event of its own (every sibling
+  owned entity's creation does); `role.status`'s `active → deprecated`
+  had no event at all; `permission_grant.status`'s system-driven
+  `expired` path was uncovered by the human-only `access.role.revoked`;
+  and `delegation`'s own creation into `pending` — distinct from
+  `access.delegation.started`'s `pending → active` transition — had no
+  event of its own. L4 is unconditional)*
 
 **Consumed:**
 - `identity.user.deactivated`, `identity.agent.*` status changes to
