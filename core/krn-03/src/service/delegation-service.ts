@@ -29,11 +29,29 @@ function now() {
  * (permission_set_id) needs no check: the delegate then exercises the
  * delegator's own current scope wholesale, which cannot exceed it by
  * construction (§17 item 7).
+ *
+ * Checks both a direct `permission_set_id` grant and a `role_id` grant
+ * whose role attaches the set (`role.permission_set_ids`, D-36) — found
+ * missing during the throwaway demo's own walkthrough: the demo grants
+ * roles, not bare permission sets, and every delegation was rejected as
+ * "not held" even though the delegator plainly held it through their
+ * role. The original acceptance/permission tests only exercised the
+ * direct-grant path, so this gap passed unnoticed until real (if
+ * throwaway) usage hit it — the same class of finding as D-32/33/35/36,
+ * fixed the same way.
  */
 function delegatorHoldsPermissionSet(store: Krn03Store, fromSubjectId: string, permissionSetId: string): boolean {
-  return Array.from(store.permissionGrants.values()).some(
-    (g) => g.subject_type === 'user' && g.subject_id === fromSubjectId && g.status === 'active' && g.permission_set_id === permissionSetId,
+  const activeGrants = Array.from(store.permissionGrants.values()).filter(
+    (g) => g.subject_type === 'user' && g.subject_id === fromSubjectId && g.status === 'active',
   )
+  return activeGrants.some((g) => {
+    if (g.permission_set_id === permissionSetId) return true
+    if (g.role_id) {
+      const role = store.roles.get(g.role_id)
+      if (role && role.status === 'active' && role.permission_set_ids.includes(permissionSetId)) return true
+    }
+    return false
+  })
 }
 
 export function createDelegation(

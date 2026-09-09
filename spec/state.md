@@ -318,6 +318,14 @@ failing-first this time.
   unsatisfiable), and §12 named events for only some of the state
   transitions in §5. Spec, code and tests all updated. See
   `/spec/decisions-taken.md` D-36. Closed.
+- D-37: `createDelegation`'s bounded-scope check
+  (`delegatorHoldsPermissionSet`) only recognised a permission_set held
+  via a *direct* grant, silently rejecting the common case of a set held
+  through a role — found while extending the throwaway demo to exercise
+  KRN-03, since neither the acceptance nor permission tests had happened
+  to exercise the role-based grant path for delegation. Fixed with a
+  regression test, no spec change needed. See `/spec/decisions-taken.md`
+  D-37. Closed.
 - KRN-03's offline profile (§15) has no automated test, for the same
   reason as KRN-02's identical open issue above — no offline runtime
   harness exists yet in this codebase. Not blocking Phase 0.
@@ -386,6 +394,6 @@ failing-first this time.
 ## Decisions log pointer
 
 D-01 through D-17: initial charter/stack/deployment/billing decisions.
-D-18 through D-36: kernel Vol 3 review decisions (Tier 1, Tier 2) plus
+D-18 through D-37: kernel Vol 3 review decisions (Tier 1, Tier 2) plus
 implementation-time findings across KRN-01, KRN-02, KRN-04 and KRN-03
-(2026-09-07/08). See `/spec/decisions-taken.md` for the full record.
+(2026-09-07/08/09). See `/spec/decisions-taken.md` for the full record.

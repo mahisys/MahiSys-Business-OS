@@ -1175,3 +1175,47 @@ remains is entirely the bullets that are structurally inapplicable until
 other modules and tooling exist (journey/persona/UI need KRN-13;
 reversal-path needs KRN-18; upgrade rehearsal needs STU-10; the offline
 profile needs a runtime harness, same open gap KRN-02 already carries).
+
+---
+
+### D-37 — `createDelegation`'s bounded-scope check missed role-based holdings (found via the throwaway demo)
+
+**Decision:** Fixed `delegatorHoldsPermissionSet` (in
+`core/krn-03/src/service/delegation-service.ts`) to also count a
+`permission_set` the delegator holds *indirectly* through an active
+`role_id` grant (`role.permission_set_ids`, D-36), not only a direct
+`permission_set_id` grant. Before the fix, delegating a permission set a
+user held only through a role was always rejected as "not held" —
+`KRN-03-FR-004`'s bounded check was correct in shape but incomplete in
+coverage, since it silently ignored the more common real-world grant
+path (grant a role, not a bare permission set).
+
+**How this was found:** while extending the throwaway demo UI (per
+explicit request, screenshots) to exercise KRN-03 end to end. The demo
+grants roles to users (matching how the acceptance/permission tests also
+mostly grant roles), then tried to delegate the permission set that role
+attaches — and every attempt failed. The existing acceptance test
+(`KRN-03-FR-004`) and the existing bounded-delegation permission test
+both happened to grant the permission set *directly* to the delegator,
+never through a role, so neither exercised the path that was actually
+broken. This is the same class of finding as D-32/33/35/36 (a concrete
+mismatch surfaced by exercising the real code, not a spec ambiguity),
+but found through downstream *use* of the module rather than through
+writing its own tests — a reminder that "the tests pass" and "the tests
+cover the realistic path" are not the same claim.
+
+**Reasoning:** Same as D-32/33/35/36 — a concrete implementation bug,
+fixed directly per the D-31 precedent, with a regression test added
+(`tests/unit/krn-03.permissions.test.ts`) proving the previously-broken
+path now works. No spec change was needed — `role.permission_set_ids`
+already existed (D-36); the bug was that `delegatorHoldsPermissionSet`
+never consulted it.
+
+**Decided by:** AI implementer, 2026-09-09, while extending the demo UI;
+flagged here for human awareness rather than gated behind a question,
+consistent with D-32/33/35/36.
+
+**Affects:** `core/krn-03/src/service/delegation-service.ts`
+(`delegatorHoldsPermissionSet` now checks both grant paths);
+`tests/unit/krn-03.permissions.test.ts` (new regression test). No spec
+changes. All 244 KRN-01..04 tests still pass.

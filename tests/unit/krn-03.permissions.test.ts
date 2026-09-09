@@ -136,6 +136,16 @@ describe('KRN-03 write paths actually enforce the matrix, not just report it', (
     ).toThrow()
   })
 
+  it('createDelegation: a permission_set held only indirectly via a role grant still counts as "held" (found via the throwaway demo, D-36-style fix)', () => {
+    const set = createPermissionSet(store, { tenant_id: TENANT_ID, namespace: 'tnt', code: 'PS_VIA_ROLE', name: 'Via role', grants: [] }, sysActor, 'PR-21')
+    const role = createRole(store, { tenant_id: TENANT_ID, namespace: 'tnt', code: 'ROLE_VIA', name: 'Via', description: '', is_assignable_to_agent: false, permission_set_ids: [set.id] }, sysActor, 'PR-21')
+    grantPermission(store, { tenant_id: TENANT_ID, subject_type: 'user', subject_id: USER_A, role_id: role.id, permission_set_id: null, scope_override_id: null, expires_at: null }, sysActor, 'PR-21')
+
+    expect(() =>
+      createDelegation(store, { tenant_id: TENANT_ID, from_subject_id: USER_A, to_subject_id: USER_B, permission_set_id: set.id, period: { from: '2026-09-14', to: '2026-09-19', is_open_ended: false }, reason: 'leave' }, userActor, 'OTHER', USER_A),
+    ).not.toThrow()
+  })
+
   it('effective_permissions.read: PR-01 can read another subject\'s permissions, OTHER cannot', () => {
     expect(() => getEffectivePermissionsViewer(store, 'user', USER_B, 'PR-01', USER_A)).not.toThrow()
     expect(() => getEffectivePermissionsViewer(store, 'user', USER_B, 'OTHER', USER_A)).toThrow()
