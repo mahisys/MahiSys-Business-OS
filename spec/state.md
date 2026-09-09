@@ -4,7 +4,7 @@ Per Vol 6 §1: read this at the start of every session; update it at the end
 of every session. This file reconciles with reality per Vol 6 §10 (Phase
 gates).
 
-**Last updated:** 2026-09-08
+**Last updated:** 2026-09-09
 
 ---
 
@@ -12,7 +12,7 @@ gates).
 
 | Phase | Content | Status |
 |---|---|---|
-| **Phase 0** | Kernel: KRN-01..14, CMP-01..04, ITG-01 | Spec drafting complete for KRN-01..20. Tier-1/Tier-2 review closed (D-18..D-32), plus D-33 (KRN-02 permission-gap findings), D-34 (KRN-04 `sys` metadata physically replicated per tenant, extending D-18), D-35 (three more KRN-04.md internal-consistency gaps) and D-36 (two KRN-03.md internal-consistency gaps). **KRN-01, KRN-02, KRN-04 and KRN-03: full test pyramids written and passing (243/243 combined — contract, unit, acceptance, permission enforcement, event-schema conformance for all four), core business logic implemented in-memory, permission enforcement wired into every write path in all four modules.** See each module's DoD status below for what's structurally left (journey/persona/upgrade/KRN-18/offline-runtime/STU-10 — all blocked on other modules or tooling, not on KRN-01/KRN-02/KRN-04/KRN-03 themselves). No other module has contract tests or implementation yet. |
+| **Phase 0** | Kernel: KRN-01..14, CMP-01..04, ITG-01 | Spec drafting complete for KRN-01..20. Tier-1/Tier-2 review closed (D-18..D-32), plus D-33 (KRN-02 permission-gap findings), D-34 (KRN-04 `sys` metadata physically replicated per tenant, extending D-18), D-35 (three more KRN-04.md internal-consistency gaps), D-36 (two KRN-03.md internal-consistency gaps), D-37 (KRN-03 delegation bug found via the demo) and D-38 (three KRN-06.md gaps). **KRN-01, KRN-02, KRN-04, KRN-03 and KRN-06: full test pyramids written and passing (298/298 combined — contract, unit, acceptance, permission enforcement, event-schema conformance for all five), core business logic implemented in-memory, permission enforcement wired into every write path in all five modules.** See each module's DoD status below for what's structurally left (journey/persona/upgrade/KRN-18/offline-runtime/STU-10 — all blocked on other modules or tooling, not on KRN-01/KRN-02/KRN-04/KRN-03/KRN-06 themselves). No other module has contract tests or implementation yet. |
 | Phase 1 | STU-01..05, KRN-15..20 | Vol 3 drafted alongside Phase 0 (KRN-15..20 done early, ahead of need, since all 20 kernel modules were drafted as one batch). STU-01..05 not started — no Vol 3 files exist for Studio modules yet. |
 | Phase 2 | INT-01, 02, 03, 04, 12 | Not started. |
 | Phase 3+ | FIN, SCM, MFG, PPL, SLS, verticals, etc. | Not started. |
@@ -26,7 +26,7 @@ gates).
 | KRN-03 Access Control | APPROVED (D-25, D-31), **reworked** (D-36) | **243/243 passing (combined with KRN-01/02/04)** | **Core logic + full permission enforcement done — remaining DoD bullets blocked on other modules/tooling except the offline-profile test, see below** | Full logic at `core/krn-03/src/service/`; KRN-03's own suite is 50 tests (18 contract + 8 unit + 10 acceptance + 13 permission + 1 event-schema); owns the single effective-permissions resolution path (DR-003) every future module's data-access layer will call |
 | KRN-04 Entity & Metadata Engine | APPROVED (D-31), **reworked** (D-34, D-35) | **193/193 passing (combined with KRN-01/02)** | **Core logic + full permission enforcement done — remaining DoD bullets blocked on other modules/tooling, see below** | Full logic at `core/krn-04/src/service/`; KRN-04's own suite is 54 tests (19 contract + 8 unit + 12 acceptance + 14 permission + 1 event-schema); the true dependency bottleneck of the kernel graph — 12 other modules name it directly |
 | KRN-05 Process Engine | APPROVED (D-31) | Not started | Not started | |
-| KRN-06 Event Bus & Event Store | APPROVED (D-31) | Not started | Not started | Vol 1 gave no Events line — flagged |
+| KRN-06 Event Bus & Event Store | APPROVED (D-31), **reworked** (D-38) | **298/298 passing (combined with KRN-01/02/03/04)** | **Core logic + full permission enforcement done — remaining DoD bullets blocked on other modules/tooling, see below** | Full logic at `core/krn-06/src/service/`; KRN-06's own suite is 54 tests (12 contract + 10 unit + 17 acceptance + 14 permission + 1 event-schema-conformance); owns `recordEvent`, the single FR-001 outbox-write path every other kernel module's own `store.emit()`-style helper conceptually models (KRN-06 is the first module to actually *be* that mechanism, not just assume it) |
 | KRN-07 Rules Engine | APPROVED (D-20, D-31) | Not started | Not started | |
 | KRN-08 Document Service | APPROVED (D-22, D-31) | Not started | Not started | |
 | KRN-09 Notification & Comms Hub | APPROVED (D-21, D-31) | Not started | Not started | |
@@ -198,6 +198,71 @@ no Vol 3 files exist yet. Not started.
     found 2 of D-36's gaps (the missing `role.permission_set_ids` link
     and 4 missing events).
 
+## Tooling (established this session, KRN-06)
+
+- `core/krn-06` — fifth module package, same shape as its siblings:
+  `src/contracts/` (event — P-08 verbatim, not universal-fields-wrapped;
+  event_schema, subscription, delivery_attempt, dead_letter, outbox — all
+  extrapolated per §17 item 1, D-31-bulk-approved; a locally-defined
+  `RuleCondition`/`filter-expression.ts`, the same P-12 shape KRN-03
+  defines locally, independently redefined here per L3/Vol 6 §7 rather
+  than imported from `@mahisys/krn-03`; API contracts; the module's own
+  administrative event contracts per §12), `src/service/` (in-memory
+  `Krn06Store`, bootstrap `permissions.ts` mirroring §11 plus
+  `retention.configure` — D-38, one service file per owned entity/concern).
+- `Krn06Store.emit()` (aliased as `recordEvent()` in event-service.ts) is
+  the FR-001 atomic outbox-write path: writes the `event` row and its
+  `outbox` entry together, with no code path producing one without the
+  other, then immediately runs the (synchronous, no separate worker
+  process exists yet) publish step through a real
+  `OUTBOX_STATUS_TRANSITIONS`-checked transition rather than a hardcoded
+  literal. Every other function in the module — including KRN-06's own
+  administrative mutations (subscription created/paused/disabled, dead
+  letter created/redriven/discarded, replay executed, schema
+  registered/deprecated) — calls this same function, directly
+  implementing §12's "these events themselves flow through the same
+  outbox pattern... recursive, but consistent" rather than treating it as
+  a side note.
+- `attemptEventMutation()` exists solely to make KRN-06-FR-002
+  (append-only, no update/delete path, for any actor including PR-21)
+  testable: every branch throws unconditionally, with no persona
+  parameter at all — the whole point being that no permission check could
+  ever let this succeed, unlike every other gated action in the module.
+- `event_schema.register` (§17 item 4) is implemented as a
+  never-persona-gated, service-actor-only action (`actor.type ===
+  'service'`), matching how KRN-04 treats `sys` writes (D-34's
+  precedent) rather than adding it to the persona matrix at all — §11's
+  own table already says ✗ for every persona including PR-21.
+- `queryEvents`/`getEventById` take an explicit, pre-resolved
+  `EventReadScope` (`subject_type_allow_list: string[] | null`) rather
+  than resolving a caller's actual KRN-03 data_scope itself (L3) —
+  mirrors KRN-03's own `isRowInScope` pre-resolved-parameter pattern
+  exactly. List queries (`queryEvents`) filter silently outside scope
+  (KRN-06-FR-010's literal "returns no result" sample); a direct
+  fetch-by-id outside scope (`getEventById`) is a 403 instead, per §11's
+  separate negative case for that access shape.
+- Full test pyramid, 54/54 passing (298/298 combined with
+  KRN-01/02/03/04):
+  - `tests/contract/krn-06.contract.test.ts` (12) — shape only, including
+    the D-38 `event_schema.schema_version` vs universal `version` distinction.
+  - `tests/unit/krn-06.unit.test.ts` (10) — exhaustive state-transition
+    legality for all five KRN-06 state machines (`outbox`,
+    `delivery_attempt`, `dead_letter`, `subscription`, and the inferred
+    `event_schema` machine — §5 gives no explicit one for the last, noted
+    in the code as inferred from its own `status` enum).
+  - `tests/unit/krn-06.acceptance.test.ts` (17) — every G/W/T in
+    KRN-06.md §16 (FR-001..011, DR-001, DR-002), adapted where KRN-06
+    doesn't own the domain mutation a sample references (L3), same
+    pattern as KRN-03/04's adaptations.
+  - `tests/unit/krn-06.permissions.test.ts` (14) — §11 positive/negative
+    cases *and* functional proof that every write path rejects an
+    unauthorised persona/actor at the real function call, including the
+    PR-30-ownership-check negative case and the service-actor-only
+    `event_schema.register` gate.
+  - `tests/unit/krn-06.event-schema-conformance.test.ts` (1, exercising 9
+    administrative event types) — runs the real service functions and
+    validates actual emitted events against the real Zod schemas.
+
 ## KRN-01 Definition of Done — see `/spec/decisions-taken.md`
 
 Full checklist with reasoning recorded there. Short version: core logic,
@@ -266,6 +331,32 @@ provisioning-time discipline outside what `resolveEffectivePermissions`
 itself can honestly claim to enforce, not silently skipped. **Same
 process deviation as KRN-04:** acceptance tests were not strictly written
 failing-first this time.
+
+## KRN-06 Definition of Done — see `/spec/decisions-taken.md`
+
+Full checklist with reasoning recorded there. Short version: core logic
+— most importantly `recordEvent`/`Krn06Store.emit()`, the single FR-001
+outbox-write path every producing module's data-access layer would call
+— full test pyramid, and permission enforcement across every write path
+in all 6 owned entities (event, event_schema, subscription,
+delivery_attempt, dead_letter, outbox) are done and tested, including
+the D-38 fixes (`event_schema.schema_version` naming collision,
+`retention.configure` missing permission column). **Remaining DoD
+bullets are structurally blocked on other modules/tooling**, same
+pattern as every kernel module so far: journey needs named application
+modules; persona/UI needs KRN-13; reversal-path needs KRN-18; upgrade
+rehearsal needs STU-10; agent-replay is N/A (§8: KRN-06 has no agents of
+its own — it is the trigger substrate other agents subscribe through,
+via INT-03, not built yet). **Two items are real, not-yet-closed gaps,
+flagged rather than silently assumed:** the offline profile (§15,
+`online` — no field-capture surface of its own, but must behave
+correctly under KRN-16's downstream sync load once KRN-16 exists) has no
+automated offline-runtime-harness test, same shared gap as KRN-02/
+KRN-03; and the statutory retention floor (KRN-06-FR-009) is implemented
+against a clearly-labelled placeholder value pending human confirmation
+(D-38). **Same process deviation as KRN-04/KRN-03:** acceptance tests
+were not strictly written failing-first this time — contracts, service
+layer and tests were developed together against KRN-06.md directly.
 
 ## Open issues
 
@@ -337,6 +428,20 @@ failing-first this time.
   screen work or extended. Delete the directory once no longer needed;
   do not build on it when KRN-13 (Layout & Navigation Engine) is
   eventually implemented.
+- D-38: three KRN-06.md gaps found while writing contracts/service/tests
+  — a field-naming collision between §4.1's `event_schema.version` and
+  Vol 2 §1.2's universal `version` lock field (renamed to
+  `schema_version`), a missing `retention.configure` permission-matrix
+  column despite §1/§2 naming it as a stated PR-21 job, and
+  `subscription.retry_ceiling` implemented as a real per-subscription
+  field per §17 item 6's own proposal. One item deferred, not decided:
+  the actual statutory retention floor value (§17 item 3) — implemented
+  against a clearly-flagged placeholder (2922 days / 8 years), not
+  blocking. See `/spec/decisions-taken.md` D-38. Closed (mechanism);
+  retention floor value remains open pending human confirmation.
+- KRN-06's offline profile (§15, `online`) has no automated test, same
+  reason as KRN-02/KRN-03's identical open issue — no offline runtime
+  harness exists yet. Not blocking Phase 0.
 - **Product-direction note (not a Vol 0 decision, just a breadcrumb for
   whoever specs STU-09):** the human, on seeing the throwaway demo,
   asked that tenants be able to pick their own colour theme rather than
@@ -375,25 +480,40 @@ failing-first this time.
    passing (243/243 combined with KRN-01/02/04), every write path across
    all 6 owned entities enforced and proven by test, including the D-36
    completeness fixes.**
-9. KRN-03 is complete per Vol 6 §5 for every applicable bullet except the
-   offline-profile test (a real, tracked gap shared with KRN-02, not a
-   structural block — see Open issues). With KRN-01/02/03/04 all done,
-   **KRN-20 (Licensing & Entitlement)** newly has every dependency
-   satisfied too (`Depends on: KRN-01, KRN-02, KRN-03, KRN-04` — exactly
-   this set), alongside KRN-05 (Process Engine) and KRN-06 (Event Bus &
-   Event Store), both dependency-free from the start. Of these three,
-   **KRN-06 is the next bottleneck to clear**: 11 other kernel modules
-   (KRN-07, 08, 09, 10, 11, 13, 14, 15, 16, 17, 18) name it as a direct
-   dependency — more than any module since KRN-04. **Current step:
-   KRN-06.** (KRN-05 and KRN-20 remain valid alternatives if priorities
-   shift.)
-10. Studio (STU-01..05) and remaining Phase 1 kernel Vol 3 files
+9. ~~KRN-03 is complete per Vol 6 §5 for every applicable bullet~~ **DONE**
+   (except the offline-profile test, a real tracked gap shared with
+   KRN-02, not a structural block — see Open issues) — moved to KRN-06
+   (Event Bus & Event Store), identified as the biggest bottleneck (11
+   dependent modules).
+10. ~~KRN-06 full test pyramid + permission enforcement~~ **DONE — 54/54
+    passing (298/298 combined with KRN-01/02/03/04), every write path
+    across all 6 owned entities enforced and proven by test, including
+    the D-38 fixes.** KRN-06 is complete per Vol 6 §5 for every
+    applicable bullet except the offline-profile test (shared gap, not
+    structural) and the statutory-retention-floor placeholder value
+    (D-38, not blocking).
+11. With KRN-01/02/03/04/06 all done, re-checking every kernel module's
+    dependency clause in full (several span multiple lines — a first
+    pass missed this and undercounted) shows **KRN-05, KRN-07, KRN-10,
+    KRN-11, KRN-14 and KRN-20 all now have every dependency satisfied.**
+    (KRN-05 is *not* among them despite depending only on KRN-01/04/06
+    at first glance — its dependency clause continues onto a second line
+    naming KRN-07 and KRN-12 too, both still unbuilt.) By direct-dependent
+    count: **KRN-11 (Numbering & Sequencing) is the next bottleneck** (2
+    dependents: KRN-08, KRN-16 — though neither is fully unblocked by
+    KRN-11 alone, since both also need KRN-15). KRN-07 and KRN-10 each
+    have 1 dependent (KRN-05 and KRN-18 respectively); KRN-20 has 1
+    (KRN-13); KRN-14 has 0 (terminal-ish, Search & Semantic Index).
+    **Current step: KRN-11.** (KRN-05, KRN-07, KRN-10, KRN-14 and KRN-20
+    remain valid, fully-unblocked alternatives if priorities shift.)
+12. Studio (STU-01..05) and remaining Phase 1 kernel Vol 3 files
     (already drafted for KRN-15..20 ahead of need) get the same review
     treatment before Phase 1 begins.
 
 ## Decisions log pointer
 
 D-01 through D-17: initial charter/stack/deployment/billing decisions.
-D-18 through D-37: kernel Vol 3 review decisions (Tier 1, Tier 2) plus
-implementation-time findings across KRN-01, KRN-02, KRN-04 and KRN-03
-(2026-09-07/08/09). See `/spec/decisions-taken.md` for the full record.
+D-18 through D-38: kernel Vol 3 review decisions (Tier 1, Tier 2) plus
+implementation-time findings across KRN-01, KRN-02, KRN-04, KRN-03 and
+KRN-06 (2026-09-07/08/09). See `/spec/decisions-taken.md` for the full
+record.

@@ -5,6 +5,18 @@ coverage/
 .env
 .env.local
 
+# `tsc --build` (composite: true, declaration: true, no outDir) emits
+# .js/.d.ts in place alongside .ts source under core/ and tests/ — these
+# are regeneratable build output, not source, and must never be committed.
+core/**/*.js
+core/**/*.js.map
+core/**/*.d.ts
+core/**/*.d.ts.map
+tests/**/*.js
+tests/**/*.js.map
+tests/**/*.d.ts
+tests/**/*.d.ts.map
+
 # Throwaway KRN-01/KRN-02 demo UI (see demo/server.ts header) — not part
 # of the governed build (Vol 6 §7), never committed.
 /demo/

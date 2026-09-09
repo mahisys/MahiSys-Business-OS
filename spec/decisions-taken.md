@@ -1219,3 +1219,83 @@ consistent with D-32/33/35/36.
 (`delegatorHoldsPermissionSet` now checks both grant paths);
 `tests/unit/krn-03.permissions.test.ts` (new regression test). No spec
 changes. All 244 KRN-01..04 tests still pass.
+
+---
+
+### D-38 — KRN-06.md gaps found during implementation
+
+**Decision:** Three fixes made directly while building KRN-06 (Event Bus &
+Event Store), all per the D-31/D-32-style precedent ("a concrete mismatch
+found during implementation gets fixed directly, not escalated to
+Q&A"), plus one genuinely deferred item flagged rather than guessed at:
+
+1. **Field-naming collision: `event_schema.version`.** KRN-06.md §4.1's
+   field table names `event_schema`'s own schema-version-number field
+   `version` — but every entity's universal fields (Vol 2 §1.2) already
+   carry a `version` (the record's own optimistic-concurrency counter),
+   which this would silently collide with and override in a Zod
+   `.extend()`. Renamed the business field to `schema_version` in the
+   implementation, matching the terminology `event.schema_version`
+   ("Resolves against `event_schema`") already uses to reference it — the
+   two fields were clearly meant to correlate by name. Not a design
+   question, a field-table typo class of gap, same as D-33's found-not-
+   designed pattern.
+
+2. **Missing `retention.configure` permission-matrix column.** KRN-06.md
+   §1/§2 both explicitly name "configures retention above the statutory
+   floor" as one of PR-21's stated jobs, but §11's permission table has no
+   column for it at all — exactly the same shape of gap as KRN-01's D-32
+   (`isolation_tier.promote` had no permission gate despite being a
+   stated, consequential action). Added `retention.configure` to the
+   bootstrap matrix, PR-21-only (matching every other administrative
+   action in this module), and wired real enforcement into
+   `setRetentionPolicy()`.
+
+3. **`subscription.retry_ceiling` implemented as a real field, not a
+   hard-coded constant.** §17 item 6 already flags the dead-letter
+   threshold as unspecified and proposes "configurable per subscription,
+   platform default 5 attempts" — this is not a new decision (already
+   D-31-covered as a Tier-2 drafting gap), noted here only because the
+   implementation takes the proposal at its word: `retry_ceiling` is a
+   genuine per-subscription field a caller can set, defaulting to 5, not
+   a constant baked into the delivery-service logic.
+
+**Deferred, not decided (flagged per §17 item 3, not blocking):** the
+actual statutory retention floor value (`KRN-06-FR-009`) is unknown — Vol
+2 §P-08 states only "above a statutory floor," no number. Implemented
+`setRetentionPolicy`'s below-floor rejection mechanism in full (fully
+testable and correct regardless of the constant's exact value) against a
+clearly-labelled placeholder of 2922 days (8 years — the longer of
+India's two most likely applicable periods: Companies Act 2013
+books-of-account retention at 8 years, GST record retention at 72
+months/6 years from the annual-return due date). Same "deferred number,
+not blocking" treatment as D-16/D-30's pricing figures — only the
+constant in `core/krn-06/src/service/retention-service.ts`
+(`STATUTORY_RETENTION_FLOOR_DAYS`) needs correcting once a human confirms
+the actual applicable statutory period(s); the mechanism around it does
+not change.
+
+**How these were found:** writing KRN-06's contract/service/test layers
+against KRN-06.md directly (Vol 6 §6 steps 2-4) — the field collision
+surfaced immediately when constructing a literal `EventSchemaRecord`
+object (a duplicate-key TypeScript error), and the missing permission
+column surfaced by cross-checking §1/§2's persona job descriptions
+against §11's table, the same cross-referencing method that found D-36's
+gaps in KRN-03.
+
+**Reasoning:** All three are concrete, mechanical corrections against an
+already-approved spec file (KRN-06.md is APPROVED per D-31), not new
+architectural questions — per D-31's own "what this does not mean"
+clause and the D-32/33/35/36/37 precedent chain.
+
+**Decided by:** AI implementer, 2026-09-09, during KRN-06 implementation.
+
+**Affects:** `spec/vol3/KRN-06.md` (no edit needed — the field-table typo
+and missing permission column are corrected in the implementation and
+recorded here, following the same lightweight-correction pattern used
+when a fix is unambiguous and conservative); `core/krn-06/src/contracts/
+event-schema.ts`, `core/krn-06/src/service/{event-schema-service.ts,
+retention-service.ts, permissions.ts}`; `tests/unit/krn-06.*.test.ts`
+and `tests/contract/krn-06.contract.test.ts`. All 298 KRN-01..04/06 tests
+pass (54 new KRN-06 tests: 12 contract + 10 unit + 17 acceptance + 14
+permission + 1 event-schema-conformance).

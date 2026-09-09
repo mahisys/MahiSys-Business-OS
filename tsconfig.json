@@ -22,7 +22,9 @@
       "@mahisys/krn-04": ["core/krn-04/src/index.ts"],
       "@mahisys/krn-04/*": ["core/krn-04/src/*"],
       "@mahisys/krn-03": ["core/krn-03/src/index.ts"],
-      "@mahisys/krn-03/*": ["core/krn-03/src/*"]
+      "@mahisys/krn-03/*": ["core/krn-03/src/*"],
+      "@mahisys/krn-06": ["core/krn-06/src/index.ts"],
+      "@mahisys/krn-06/*": ["core/krn-06/src/*"]
     }
   },
   "include": ["core", "tests"],
