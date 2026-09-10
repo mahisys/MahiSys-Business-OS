@@ -1373,3 +1373,52 @@ sequence-service.ts` (`confirmReservation`'s corrected ordering check);
 `tests/contract/krn-11.contract.test.ts`, `tests/unit/krn-11.*.test.ts`.
 All 340 KRN-01..04/06/11 tests pass (42 new KRN-11 tests: 13 contract + 2
 unit + 12 acceptance + 14 permission + 1 event-schema-conformance).
+
+---
+
+### D-40 — KRN-10 hash-chain canonicalization bug, found by its own tests before commit
+
+**Decision:** Fixed a real bug in `computeEntryHash` (`core/krn-10/src/
+service/store.ts`) that silently defeated `KRN-10-FR-002`'s entire
+tamper-evidence guarantee. The first implementation canonicalized an
+`audit_entry`'s hashed content with `JSON.stringify(canonical,
+Object.keys(canonical).sort())` — passing an array as `JSON.stringify`'s
+second argument looks like a top-level key allowlist, but it is actually
+applied as a single flat whitelist at *every* nesting level of the
+value. Since `canonical.before`/`canonical.after` are nested objects
+whose own field names (e.g. `quantity`) never appear in the top-level
+key list, every field inside `before`/`after` was silently stripped
+before hashing — meaning the hash never actually covered the mutation's
+before/after payload at all, only the entry's outer envelope fields.
+A hypothetical tamper to `after.quantity` (exactly `KRN-10-FR-002`'s own
+acceptance sample) produced an *identical* hash and passed chain
+verification cleanly — the tamper-evidence guarantee this module exists
+to provide was structurally broken from the first line of code. Replaced
+with a proper recursive `canonicalize()` that sorts object keys at every
+nesting level (preserving array order), then hashes the resulting JSON.
+
+**How this was found:** by the module's own test-first protocol (Vol 6
+§6) working exactly as intended — a unit test asserting "a tampered
+`after` value produces a different hash" and the `KRN-10-FR-002`
+acceptance test's own hypothetical-tamper scenario both failed
+immediately on first run, before any commit. This is the starkest
+example yet in this project of why Vol 6 §6's step ordering (write the
+test, then implement) matters: a security-critical guarantee's own
+negative-case test caught its defeat within the same session it was
+introduced, rather than shipping silently broken.
+
+**Reasoning:** A concrete implementation bug in an already-approved spec
+file's already-decided design (hash-chain approach is KRN-10.md's own
+§17 item 5, flagged as `[stack-bound]`-open but not in question here —
+the *algorithm choice* wasn't wrong, the *serialization* feeding it was),
+fixed directly per the D-31/D-32 precedent rather than escalated to Q&A.
+
+**Decided by:** AI implementer, 2026-09-10, during KRN-10 implementation
+— caught by the acceptance/unit tests themselves before any commit.
+
+**Affects:** `core/krn-10/src/service/store.ts` (`canonicalize()` added,
+`computeEntryHash` fixed). `tests/unit/krn-10.unit.test.ts` and
+`tests/unit/krn-10.acceptance.test.ts` both carry the regression
+coverage that caught this. All 381 KRN-01..04/06/10/11 tests pass (41 new
+KRN-10 tests: 13 contract + 4 unit + 12 acceptance + 11 permission + 1
+event-schema-conformance).
