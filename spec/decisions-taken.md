@@ -1422,3 +1422,68 @@ fixed directly per the D-31/D-32 precedent rather than escalated to Q&A.
 coverage that caught this. All 381 KRN-01..04/06/10/11 tests pass (41 new
 KRN-10 tests: 13 contract + 4 unit + 12 acceptance + 11 permission + 1
 event-schema-conformance).
+
+---
+
+### D-41 — KRN-07 implementation decisions (rule-activation cascade, domain-grant matrix, PR-02's context-dependent domain)
+
+**Decision:** Three implementation-time judgment calls made while building
+KRN-07 (Rules Engine), each against a genuine gap in KRN-07.md rather
+than an invented design:
+
+1. **Activating a `rule_set` cascades to every `draft` rule within it.**
+   §10's API surface lists only `POST /rule-sets/{id}/activate` — no
+   separate endpoint to activate an individual `rule`, even though
+   `rule.status` (§5) is formally its own `draft → active` machine. This
+   draft's reading: an owner activates the *set* as the unit of work, and
+   every draft rule inside becomes live at that moment — `activateRuleSet`
+   now transitions all its draft rules to `active` as part of the same
+   call. Not literally stated in KRN-07.md either way; flagged inline in
+   `rule-set-service.ts` alongside the other §17-class gaps rather than
+   silently assumed.
+2. **The permission matrix is modeled as a genuine two-dimensional
+   persona × `rule_type`-domain grant, not a flat boolean per action.**
+   Every prior kernel module's bootstrap matrix (KRN-01/02/03/04/06/10/11)
+   was a flat `Record<Persona, Record<Action, boolean>>`; KRN-07.md §11's
+   own table is two-dimensional by nature (PR-08 holds `pricing`/
+   `eligibility` but not `credit`; PR-16 holds `credit`/
+   `approval_threshold` for editing but reads *all* domains for controller
+   visibility). Collapsing this to a flat table would have silently
+   discarded the domain scoping §11 exists to express, so `permissions.ts`
+   introduces `DomainGrant` (`RuleType[] | 'all' | 'none'`) instead —
+   consistent with the project's standing principle that a genuine
+   nuance in the spec gets modeled precisely rather than flattened for
+   implementation convenience.
+3. **PR-02 (Functional Head)'s domain is caller-supplied, not a static
+   table entry.** §11 grants PR-02 "own function's rule types" — which
+   function a given PR-02 instance heads is runtime context (resolved
+   from KRN-01 org-unit/function data by the caller, L3), not a fixed
+   list this bootstrap matrix could ever hardcode correctly. `read`/
+   `activate` calls for PR-02 take an explicit `callerDomainOverride:
+   RuleType[]` parameter instead of a `GRANTS` table entry; `edit_draft`/
+   `simulate` stay a hard `'none'` regardless of override, matching §11's
+   own "reviews/proposes via process, not direct edit."
+
+**How these were found:** (1) while reconciling §10's API surface against
+§5's state machine during contract/service design (Vol 6 §6 steps 2-3);
+(2) and (3) while transcribing §11's table directly and noticing a flat
+boolean matrix could not faithfully represent it, the same "read the
+table precisely before implementing" discipline that has driven every
+domain-scoping decision this session (KRN-06's `EventReadScope`, KRN-10's
+`AuditReadScope`).
+
+**Reasoning:** All three are concrete modeling decisions against an
+already-approved spec file (KRN-07.md is APPROVED per D-31) with no
+architectural fork or cross-module disagreement — decided directly per
+the D-31 precedent rather than escalated to Q&A, and (1) specifically
+flagged in code for human confirmation alongside KRN-07.md's own §17
+items.
+
+**Decided by:** AI implementer, 2026-09-10, during KRN-07 implementation.
+
+**Affects:** `core/krn-07/` (new package, all files, notably
+`rule-set-service.ts`'s activation cascade and `permissions.ts`'s
+`DomainGrant`/`callerDomainOverride` design); `tests/contract/
+krn-07.contract.test.ts`, `tests/unit/krn-07.*.test.ts`. All 422
+KRN-01..04/06/07/10/11 tests pass (41 new KRN-07 tests: 11 contract + 4
+unit + 9 acceptance + 16 permission + 1 event-schema-conformance).

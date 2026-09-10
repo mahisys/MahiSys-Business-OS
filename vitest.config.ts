@@ -12,6 +12,7 @@ export default defineConfig({
       '@mahisys/krn-06': path.resolve(__dirname, 'core/krn-06/src/index.ts'),
       '@mahisys/krn-11': path.resolve(__dirname, 'core/krn-11/src/index.ts'),
       '@mahisys/krn-10': path.resolve(__dirname, 'core/krn-10/src/index.ts'),
+      '@mahisys/krn-07': path.resolve(__dirname, 'core/krn-07/src/index.ts'),
     },
   },
   test: {

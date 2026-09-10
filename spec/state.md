@@ -12,7 +12,7 @@ gates).
 
 | Phase | Content | Status |
 |---|---|---|
-| **Phase 0** | Kernel: KRN-01..14, CMP-01..04, ITG-01 | Spec drafting complete for KRN-01..20. Tier-1/Tier-2 review closed (D-18..D-32), plus D-33 (KRN-02 permission-gap findings), D-34 (KRN-04 `sys` metadata physically replicated per tenant, extending D-18), D-35 (three more KRN-04.md internal-consistency gaps), D-36 (two KRN-03.md internal-consistency gaps), D-37 (KRN-03 delegation bug found via the demo), D-38 (three KRN-06.md gaps), D-39 (KRN-11: real KRN-06 event integration, `open_reservations` addition, a confirm-ordering fix) and D-40 (KRN-10: a real hash-chain tamper-detection bug caught by its own tests before commit). **KRN-01, KRN-02, KRN-04, KRN-03, KRN-06, KRN-11 and KRN-10: full test pyramids written and passing (381/381 combined — contract, unit, acceptance, permission enforcement, event-schema conformance for all seven), core business logic implemented in-memory, permission enforcement wired into every write path in all seven modules.** See each module's DoD status below for what's structurally left (journey/persona/upgrade/KRN-18/offline-runtime/STU-10 — all blocked on other modules or tooling, not on KRN-01/KRN-02/KRN-04/KRN-03/KRN-06/KRN-11/KRN-10 themselves). No other module has contract tests or implementation yet. |
+| **Phase 0** | Kernel: KRN-01..14, CMP-01..04, ITG-01 | Spec drafting complete for KRN-01..20. Tier-1/Tier-2 review closed (D-18..D-32), plus D-33 (KRN-02 permission-gap findings), D-34 (KRN-04 `sys` metadata physically replicated per tenant, extending D-18), D-35 (three more KRN-04.md internal-consistency gaps), D-36 (two KRN-03.md internal-consistency gaps), D-37 (KRN-03 delegation bug found via the demo), D-38 (three KRN-06.md gaps), D-39 (KRN-11: real KRN-06 event integration, `open_reservations` addition, a confirm-ordering fix), D-40 (KRN-10: a real hash-chain tamper-detection bug caught by its own tests before commit) and D-41 (KRN-07: activation cascade, two-dimensional domain-grant matrix, PR-02's context-dependent domain). **KRN-01, KRN-02, KRN-04, KRN-03, KRN-06, KRN-11, KRN-10 and KRN-07: full test pyramids written and passing (422/422 combined — contract, unit, acceptance, permission enforcement, event-schema conformance for all eight), core business logic implemented in-memory, permission enforcement wired into every write path in all eight modules.** See each module's DoD status below for what's structurally left (journey/persona/upgrade/KRN-18/offline-runtime/STU-10 — all blocked on other modules or tooling, not on the eight built modules themselves). A circular dependency between KRN-13 and KRN-19 (both still unbuilt) is flagged in Open issues, unresolved. No other module has contract tests or implementation yet. |
 | Phase 1 | STU-01..05, KRN-15..20 | Vol 3 drafted alongside Phase 0 (KRN-15..20 done early, ahead of need, since all 20 kernel modules were drafted as one batch). STU-01..05 not started — no Vol 3 files exist for Studio modules yet. |
 | Phase 2 | INT-01, 02, 03, 04, 12 | Not started. |
 | Phase 3+ | FIN, SCM, MFG, PPL, SLS, verticals, etc. | Not started. |
@@ -27,7 +27,7 @@ gates).
 | KRN-04 Entity & Metadata Engine | APPROVED (D-31), **reworked** (D-34, D-35) | **193/193 passing (combined with KRN-01/02)** | **Core logic + full permission enforcement done — remaining DoD bullets blocked on other modules/tooling, see below** | Full logic at `core/krn-04/src/service/`; KRN-04's own suite is 54 tests (19 contract + 8 unit + 12 acceptance + 14 permission + 1 event-schema); the true dependency bottleneck of the kernel graph — 12 other modules name it directly |
 | KRN-05 Process Engine | APPROVED (D-31) | Not started | Not started | |
 | KRN-06 Event Bus & Event Store | APPROVED (D-31), **reworked** (D-38) | **298/298 passing (combined with KRN-01/02/03/04)** | **Core logic + full permission enforcement done — remaining DoD bullets blocked on other modules/tooling, see below** | Full logic at `core/krn-06/src/service/`; KRN-06's own suite is 54 tests (12 contract + 10 unit + 17 acceptance + 14 permission + 1 event-schema-conformance); owns `recordEvent`, the single FR-001 outbox-write path every other kernel module's own `store.emit()`-style helper conceptually models (KRN-06 is the first module to actually *be* that mechanism, not just assume it) |
-| KRN-07 Rules Engine | APPROVED (D-20, D-31) | Not started | Not started | |
+| KRN-07 Rules Engine | APPROVED (D-20, D-31), **reworked** (D-41) | **422/422 passing (combined with KRN-01/02/03/04/06/10/11)** | **Core logic + full permission enforcement done — remaining DoD bullets blocked on other modules/tooling, see below** | Full logic at `core/krn-07/src/service/`; KRN-07's own suite is 41 tests (11 contract + 4 unit + 9 acceptance + 16 permission + 1 event-schema-conformance); third module to emit through KRN-06's real `recordEvent()` (D-39 pattern), for rule_set/rule lifecycle + simulation only — `/evaluate`'s per-call `evaluation_log` writes deliberately never do (KRN-07-FR-005) |
 | KRN-08 Document Service | APPROVED (D-22, D-31) | Not started | Not started | |
 | KRN-09 Notification & Comms Hub | APPROVED (D-21, D-31) | Not started | Not started | |
 | KRN-10 Audit & Immutable Log | APPROVED (D-21, D-23, D-31), **reworked** (D-40) | **381/381 passing (combined with KRN-01/02/03/04/06/11)** | **Core logic + full permission enforcement done — remaining DoD bullets blocked on other modules/tooling, see below** | Full logic at `core/krn-10/src/service/`; KRN-10's own suite is 41 tests (13 contract + 4 unit + 12 acceptance + 11 permission + 1 event-schema-conformance); second module to emit through KRN-06's real `recordEvent()` (D-39 pattern), for its 3 administrative events only — `audit_entry`/`access_log` writes deliberately never do (§12 anti-circularity) |
@@ -372,6 +372,70 @@ no Vol 3 files exist yet. Not started.
     separately asserts `audit_entry`/`access_log` writes never reach
     KRN-06 at all (§12's anti-circularity rule, proven not just claimed).
 
+## Tooling (established this session, KRN-07)
+
+- `core/krn-07` — eighth module package: `src/contracts/` (a locally
+  defined `RuleConditionSchema` — the P-12 expression-tree shape KRN-03/
+  KRN-06 already define locally too; KRN-07 is P-12's actual owning
+  module, so this is now the canonical definition for any *new* module
+  needing it, though retrofitting KRN-03/KRN-06's already-working copies
+  is out of scope this session; rule_set, rule, rule_version,
+  evaluation_log — the last three not universal-fields-wrapped where
+  append-only/bespoke, same reasoning as `event`/`AuditEntry`; API
+  contracts; the module's own 4 event contracts per §12),
+  `src/service/` (in-memory `Krn07Store`, a genuinely two-dimensional
+  persona × `rule_type`-domain permission matrix — D-41 — one service
+  file per concern).
+- `evaluate()` (KRN-07-FR-005) is the single synchronous evaluation entry
+  point, not persona-gated, called by any producing module within its
+  own request/response cycle — same "governed by the caller's own
+  permission matrix" rationale as KRN-11's `allocate()`. Scope/period
+  filtering happens before priority ordering (KRN-07-FR-002); an
+  `evaluation_log` entry is written for every call, matched or not, but
+  **no KRN-06 event is ever emitted for an individual evaluation** —
+  only rule-set/rule lifecycle changes and simulation completion do
+  (third module to use the D-39 KRN-06 integration pattern, and the
+  first to combine it with a deliberate "some mutations don't emit"
+  exception, per KRN-07-FR-005's own explicit carve-out).
+- `editRule()` never changes `rule.status` — it creates a new
+  `rule_version`, marks the prior one `superseded_by_version_id`, and
+  advances `current_version_id`, so `evaluation_log.rule_version_id`
+  keeps resolving to the *exact* version that actually fired even after
+  a later edit (KRN-07-FR-004, proven by a dedicated acceptance test:
+  editing a rule after evaluation never changes the already-logged
+  explanation).
+- D-41 records three implementation-time modeling decisions: activating
+  a `rule_set` cascades to its draft `rule`s (§10 names no separate
+  per-rule activation endpoint); the permission matrix uses a genuine
+  `DomainGrant` (`RuleType[] | 'all' | 'none'`) per persona × action
+  rather than a flat boolean, since §11's table is two-dimensional by
+  nature; PR-02's "own function's rule types" is a caller-supplied
+  `callerDomainOverride`, not a static table entry, since which function
+  a given PR-02 heads is runtime context, not a fixed list.
+- Full test pyramid, 41/41 passing (422/422 combined with
+  KRN-01/02/03/04/06/10/11):
+  - `tests/contract/krn-07.contract.test.ts` (11) — shape only, including
+    the rule_type enum excluding `tax` entirely and the
+    natural_language_source-iff-authored_via-natural_language refine.
+  - `tests/unit/krn-07.unit.test.ts` (4) — exhaustive state-transition
+    legality for both `rule_set.status` and `rule.status`.
+  - `tests/unit/krn-07.acceptance.test.ts` (9) — every G/W/T in
+    KRN-07.md §16 (FR-001..007, DR-001, DR-002) — Vol 1 gives no
+    Acceptance sample for KRN-07 at all (§17 item 2), so both KRN-07.md's
+    own §16 and this suite are written from scratch against the stated
+    FR/DR, not expanded from a given sample.
+  - `tests/unit/krn-07.permissions.test.ts` (16) — §11 positive/negative
+    cases across the full domain matrix *and* functional proof that
+    every write/activate/simulate path rejects an unauthorised
+    persona-domain pair at the real function call, including PR-02's
+    override-driven checks and the tax-rule-type rejection applying to
+    PR-21 too.
+  - `tests/unit/krn-07.event-schema-conformance.test.ts` (1, exercising
+    4 event types) — runs the real service functions and validates
+    actual events recorded in the real `Krn06Store`; separately asserts
+    no `evaluation_log`-subject event ever reaches KRN-06 (FR-005's
+    carve-out, proven not just claimed).
+
 ## KRN-01 Definition of Done — see `/spec/decisions-taken.md`
 
 Full checklist with reasoning recorded there. Short version: core logic,
@@ -519,6 +583,34 @@ not strictly written failing-first this time — though in this case the
 tests still caught a real bug (D-40) on first run regardless, which is
 exactly what the failing-first discipline is for.
 
+## KRN-07 Definition of Done — see `/spec/decisions-taken.md`
+
+Full checklist with reasoning recorded there. Short version: core logic
+— most importantly `evaluate()`, the single synchronous evaluation path
+every pricing/credit/reorder/eligibility/approval-threshold/compliance
+decision platform-wide would call — full test pyramid, and permission
+enforcement across every read/edit/activate/simulate path in all 4 owned
+entities are done and tested, including the D-41 modeling decisions
+(activation cascade, two-dimensional domain grants, PR-02's
+context-dependent domain). **Remaining DoD bullets are structurally
+blocked on other modules/tooling**, same pattern as every kernel module
+so far: journey needs named application modules; persona/UI needs
+KRN-13 (the "Rule builder" and "Evaluation log explorer" screens); the
+KRN-05-routed activation approval for high-impact rule types degrades to
+direct execution (D-21, same as KRN-01's `tenant.lifecycle`) until KRN-05
+ships; reversal-path needs KRN-18; upgrade rehearsal needs STU-10;
+agent-replay is N/A (§8: KRN-07 has no agents of its own — several
+catalogue agents consume its outcomes as evidence, but KRN-07-FR-007
+means none of them can ever author a rule, so there is no agent
+authorship path to replay). Offline profile is `online` (§15) — KRN-07
+itself has no offline surface, but an offline-`full` consuming module
+(e.g. SLS-10) must cache the active rule/version locally and treat an
+offline `/evaluate` result as provisional per Vol 0 §9.2's general
+contract; this is inferred, not specified for KRN-07 itself (§17 item
+6), and not independently testable from inside this module alone. **Same
+process deviation as every module since KRN-04:** acceptance tests were
+not strictly written failing-first this time.
+
 ## Open issues
 
 - ~~Tier-1 architectural questions~~ **RESOLVED** (D-18..D-30).
@@ -620,6 +712,30 @@ exactly what the failing-first discipline is for.
   first line of code. Caught by the module's own unit and acceptance
   tests before commit. Fixed with a proper recursive canonicalizer. See
   `/spec/decisions-taken.md` D-40. Closed.
+- **Flagged, not yet resolved: KRN-13 and KRN-19 have a circular
+  dependency as drafted.** KRN-13.md's own `Depends on:` line names
+  KRN-19 ("terminology overrides for labels"); KRN-19.md's own `Depends
+  on:` line names KRN-13 ("Layout & Navigation Engine — renders the
+  overridden/translated labels on every generated screen"). Neither can
+  be built first under Vol 6 §3's dependency-gating rule as literally
+  read. This is a genuine architectural question (Vol 6 §4: "you believe
+  a law... must be broken," or here, two modules' own stated
+  dependencies cannot both be satisfied in order) — not guessed around.
+  Likely resolutions: one dependency is actually softer than stated (e.g.
+  KRN-13 could render *unoverridden* labels and pick up KRN-19's
+  overrides as an optional enhancement, breaking the cycle), or the two
+  need a combined build. Left for human confirmation before either
+  module is attempted; discovered while re-checking dependency clauses
+  after KRN-07 (this session), not blocking anything already in
+  progress.
+- D-41: three KRN-07 implementation-time modeling decisions — activating
+  a `rule_set` cascades to its draft `rule`s (no separate per-rule
+  activation endpoint exists in §10), the permission matrix uses a
+  genuine two-dimensional `DomainGrant` per persona × `rule_type` rather
+  than a flat boolean (§11's table is two-dimensional by nature), and
+  PR-02's domain is a caller-supplied `callerDomainOverride` rather than
+  a static table entry (which function a PR-02 instance heads is runtime
+  context). See `/spec/decisions-taken.md` D-41. Closed.
 - **Product-direction note (not a Vol 0 decision, just a breadcrumb for
   whoever specs STU-09):** the human, on seeing the throwaway demo,
   asked that tenants be able to pick their own colour theme rather than
@@ -700,26 +816,44 @@ exactly what the failing-first discipline is for.
     complete per Vol 6 §5 for every applicable bullet (offline is
     `online` by nature here, not a gap; reversal-path is N/A — KRN-10
     stores the reference, KRN-18 executes it).
-15. Re-checking dependency clauses with KRN-10 now done too: **KRN-07,
-    KRN-14 and KRN-20 remain unblocked** (unchanged by KRN-10's
-    completion) — but KRN-10 finishing moves **KRN-18** one step closer:
-    it now depends only on KRN-05 (was KRN-05 + KRN-10). KRN-05 itself
-    still needs KRN-07 and KRN-12. **Recommended next step: KRN-07
-    (Rules Engine)** — the highest-leverage pick of the three remaining
-    fully-unblocked modules, since it directly advances KRN-05 (Process
-    Engine) toward being buildable, which in turn would unblock both
-    KRN-09 and KRN-18 (each now only one dependency away). KRN-14 and
-    KRN-20 remain valid, fully-unblocked alternatives if priorities
-    shift; KRN-12 (needed for both KRN-05 and KRN-15) is worth flagging
-    as the other piece this chain will eventually need.
-16. Studio (STU-01..05) and remaining Phase 1 kernel Vol 3 files
+15. ~~Re-checking dependency clauses with KRN-10 now done too~~ **DONE**
+    — showed KRN-07, KRN-14, KRN-20 unblocked, with KRN-07 the
+    highest-leverage pick (advances KRN-05, which itself unblocks
+    KRN-09/KRN-18). **KRN-07 (Rules Engine)** was built this session.
+17. ~~KRN-07 full test pyramid + permission enforcement~~ **DONE —
+    41/41 passing (422/422 combined with KRN-01/02/03/04/06/10/11),
+    every read/edit/activate/simulate path across all 4 owned entities
+    enforced and proven by test, including the D-41 modeling
+    decisions.** KRN-07 is complete per Vol 6 §5 for every applicable
+    bullet (offline is `online` here, inferred not specified — see its
+    DoD note above, not a gap this module alone can close).
+18. Re-checking dependency clauses with KRN-07 now done too: **KRN-05
+    moved from "needs KRN-07 + KRN-12" to needing only KRN-12** — but
+    KRN-12 itself is blocked on **ITG-07** (Layer 1), which has no Vol 3
+    file drafted yet at all — a real excursion outside the kernel-only
+    pool of already-drafted, dependency-satisfied modules. Of the
+    already-drafted kernel modules, only **KRN-14** (0 dependents) and
+    **KRN-20** (1 dependent: KRN-13) remain fully unblocked. **Also
+    found and flagged (not yet resolved): KRN-13 and KRN-19 depend on
+    each other** — see Open issues above; this closes off that branch
+    entirely until a human resolves it. **Recommended next step: KRN-20
+    (Licensing & Entitlement)** — the better-leverage pick of the two
+    remaining options, since it's one of KRN-13's two blockers (the
+    other being the KRN-13/KRN-19 cycle itself). KRN-14 remains a valid,
+    fully-unblocked alternative. **After KRN-14/KRN-20, no further
+    already-drafted kernel module is buildable without either (a)
+    drafting ITG-07's Vol 3 file (a Layer-1 excursion, D-19's documented
+    exception) to unblock KRN-12 → KRN-05 → KRN-09/KRN-18, or (b) a human
+    resolving the KRN-13/KRN-19 cycle** — worth flagging now so the next
+    session isn't surprised by a shrinking pool.
+19. Studio (STU-01..05) and remaining Phase 1 kernel Vol 3 files
     (already drafted for KRN-15..20 ahead of need) get the same review
     treatment before Phase 1 begins.
 
 ## Decisions log pointer
 
 D-01 through D-17: initial charter/stack/deployment/billing decisions.
-D-18 through D-40: kernel Vol 3 review decisions (Tier 1, Tier 2) plus
+D-18 through D-41: kernel Vol 3 review decisions (Tier 1, Tier 2) plus
 implementation-time findings across KRN-01, KRN-02, KRN-04, KRN-03,
-KRN-06, KRN-11 and KRN-10 (2026-09-07/08/09/10). See
+KRN-06, KRN-11, KRN-10 and KRN-07 (2026-09-07/08/09/10). See
 `/spec/decisions-taken.md` for the full record.
