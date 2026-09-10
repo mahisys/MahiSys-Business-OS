@@ -1299,3 +1299,77 @@ retention-service.ts, permissions.ts}`; `tests/unit/krn-06.*.test.ts`
 and `tests/contract/krn-06.contract.test.ts`. All 298 KRN-01..04/06 tests
 pass (54 new KRN-06 tests: 12 contract + 10 unit + 17 acceptance + 14
 permission + 1 event-schema-conformance).
+
+---
+
+### D-39 — KRN-11 implementation decisions (real KRN-06 integration, open_reservations addition, confirm-ordering fix)
+
+**Decision:** Three things decided directly while building KRN-11
+(Numbering & Sequencing), the first module built *after* KRN-06 existed:
+
+1. **KRN-11 emits through KRN-06's real, published `recordEvent()` API,
+   not a local stand-in event array.** KRN-01/02/03/04 each kept their
+   own `store.events: EmittedEvent[]` because KRN-06 didn't exist yet
+   when they were built — a necessary placeholder for "the event bus,
+   once it exists." KRN-11 is the first module for which that placeholder
+   would now be a *regression*: KRN-06 is done, and Vol 6 L4/L3 both
+   point the same direction — every mutation emits an event (L4) via
+   published APIs, never another module's internals (L3). `Krn11Store`
+   takes a `Krn06Store` reference at construction (dependency injection)
+   and every mutation calls `@mahisys/krn-06`'s exported `recordEvent()`
+   directly. This is calling a sibling kernel module's *published*
+   service function — exactly the sanctioned cross-module mechanism Vol 6
+   §7 describes, not a violation of "no module reads/writes another
+   module's tables" (L3), since nothing reaches into KRN-06's internal
+   `Map`s. This sets the integration pattern every module built from here
+   on should follow — flagged prominently (in `core/krn-11/src/service/
+   store.ts`'s header and in `state.md`) so it isn't missed as precedent.
+2. **`sequence_state.open_reservations`, a field addition beyond §4.1's
+   table.** The API surface (§10) names a `{allocation_id}` path
+   parameter for `/confirm` and `/cancel`, but §5 explicitly states the
+   per-number lifecycle is "carried implicitly across `sequence_state`
+   and `cancelled_number`, not a separate entity's own field" — ruling
+   out a sixth top-level owned entity for it. Added a minimal
+   `open_reservations` array field directly onto the existing
+   `sequence_state` entity, giving `allocation_id` something concrete to
+   resolve against during the open (reserved-but-not-yet-confirmed)
+   phase, honouring the "not a separate entity" instruction literally.
+3. **`confirmReservation`'s ordering check, fixed after a real test
+   failure caught it before commit.** The first implementation required a
+   reservation's `sequence_value` to be exactly `current_value + 1` to
+   confirm — this is *wrong* whenever an earlier reservation was
+   cancelled rather than confirmed (KRN-11-FR-006's own acceptance
+   sample: #51 reserved then abandoned/expired, #52 is the next value to
+   confirm — but #52 is `current_value + 2`, not `+ 1`, since #51 was
+   permanently retired, never confirmed). The acceptance test for exactly
+   this scenario failed immediately with `RESERVATION_OUT_OF_ORDER`.
+   Fixed the check to reject only when a *still-open* (unresolved)
+   smaller reservation exists on the same series — a value that was
+   already cancelled is permanently resolved, so confirming past it is
+   correct, not a gap — and `current_value` now advances to
+   `max(current_value, sequence_value)` rather than by exactly one.
+
+**How these were found:** (1) and (2) while writing KRN-11.md's
+contracts/service against its already-approved text (Vol 6 §6 steps 2-3);
+(3) by the acceptance test itself failing on first run — exactly the
+test-first protocol (Vol 6 §6) catching a real logic bug before it ever
+reached committed code, the same kind of value KRN-04's
+event-schema-conformance sweep provided for D-35.
+
+**Reasoning:** (1) is an architectural improvement made possible by
+KRN-06 now existing, not a spec correction — flagged as a decision
+because it changes the integration pattern for every module built after
+it, which future sessions need to know about rather than rediscover. (2)
+and (3) are concrete, mechanical corrections against an already-approved
+spec file (KRN-11.md is APPROVED per D-31), fixed directly per the
+D-31/D-32 precedent rather than escalated to Q&A.
+
+**Decided by:** AI implementer, 2026-09-10, during KRN-11 implementation.
+
+**Affects:** `core/krn-11/` (new package, all files); `core/krn-11/src/
+service/store.ts` (the KRN-06 integration); `core/krn-11/src/contracts/
+sequence-state.ts` (`open_reservations`); `core/krn-11/src/service/
+sequence-service.ts` (`confirmReservation`'s corrected ordering check);
+`tests/contract/krn-11.contract.test.ts`, `tests/unit/krn-11.*.test.ts`.
+All 340 KRN-01..04/06/11 tests pass (42 new KRN-11 tests: 13 contract + 2
+unit + 12 acceptance + 14 permission + 1 event-schema-conformance).
